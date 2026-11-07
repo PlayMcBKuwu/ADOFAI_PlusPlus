@@ -1,0 +1,9 @@
+{
+  "EntryMethod": "MobileJudgmentMod.Main.Load",
+  "Id": "MobileJudgmentMod",
+  "DisplayName": "Mobile Judgment Mod",
+  "Author": "PlayMcBKuwu",
+  "Version": "1.0.0",
+  "GameVersion": "r150",
+  "Requirements": []
+}
