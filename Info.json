@@ -1,9 +1,9 @@
 {
-  "EntryMethod": "MobileJudgmentMod.Main.Load",
-  "Id": "MobileJudgmentMod",
+  "EntryMethod": "BetterJudgment.Main.Load",
+  "Id": "BetterJudgment",
   "DisplayName": "更好的判定 (Better Judgment)",
   "Author": "PlayMcBKuwu",
-  "Version": "1.4.4",
+  "Version": "1.5.0",
   "GameVersion": "r150",
   "Requirements": []
 }
