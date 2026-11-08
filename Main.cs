@@ -744,15 +744,6 @@ namespace ADOFAIPlusPlus
 
             GUILayout.Space(6);
 
-            bool oldEditor = Settings.AlwaysAllowEditor;
-            bool newEditor = GUILayout.Toggle(oldEditor, " " + Loc.Get("misc.editor_toggle"));
-            if (newEditor != oldEditor)
-            {
-                Settings.AlwaysAllowEditor = newEditor;
-            }
-
-            GUILayout.Space(6);
-
             bool oldAutoPlus = Settings.AutoplayPlus;
             bool newAutoPlus = GUILayout.Toggle(oldAutoPlus, " " + Loc.Get("misc.autoplay_plus_toggle") + " (Alt + Shift + A)");
             if (newAutoPlus != oldAutoPlus)

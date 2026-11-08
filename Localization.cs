@@ -193,7 +193,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "模组总开关已开启 (Master Switch: ON)");
             Add(l, "master.disable_btn", "关闭总开关");
             Add(l, "misc.section", "3. 杂项功能 (Miscellaneous)");
-            Add(l, "misc.editor_toggle", "始终允许使用关卡编辑器功能 (官谱或特殊情况亦可开启)");
             Add(l, "misc.ring_toggle", "隐藏星球判定圈 (隐藏围绕旋转星球的虚线圈)");
             Add(l, "misc.autoplay_plus_toggle", "启用 自动播放+ (内部零延迟判定 + 拟人双通道按键点亮 KV，自动阻断局内按键干扰)");
             Add(l, "misc.autoplay_keys_label", "自动播放+ 16 键位面板 (左键点击按钮后按键盘绑定，右键清空，Esc 取消):");
@@ -315,7 +314,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "模組總開關已開啟 (Master Switch: ON)");
             Add(l, "master.disable_btn", "關閉總開關");
             Add(l, "misc.section", "3. 雜項功能 (Miscellaneous)");
-            Add(l, "misc.editor_toggle", "始終允許使用關卡編輯器功能 (官譜或特殊情況亦可開啟)");
             Add(l, "misc.ring_toggle", "隱藏星球判定圈 (隱藏圍繞旋轉星球的虛線圈)");
             Add(l, "misc.autoplay_plus_toggle", "啟用 自動播放+ (內部零延遲判定 + 擬人雙通道按鍵點亮 KV，自動阻斷局內按鍵干擾)");
             Add(l, "misc.autoplay_keys_label", "自動播放+ 16 鍵位面板 (左鍵點擊按鈕後按鍵盤綁定，右鍵清空，Esc 取消):");
@@ -437,7 +435,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "Mod Master Switch is ON");
             Add(l, "master.disable_btn", "Disable Master Switch");
             Add(l, "misc.section", "3. Miscellaneous");
-            Add(l, "misc.editor_toggle", "Always Allow Level Editor (Accessible even in official levels or special scenes)");
             Add(l, "misc.ring_toggle", "Hide Planet Judgment Ring (Hides the dotted orbit circle)");
             Add(l, "misc.autoplay_plus_toggle", "Enable Autoplay+ (Zero-latency internal hits + dual-channel human keystrokes for KV)");
             Add(l, "misc.autoplay_keys_label", "Autoplay+ 16-Key Bindings (Left-click slot & press key to bind, Right-click to clear, Esc to cancel):");
@@ -559,7 +556,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "모드 마스터 스위치 활성화됨");
             Add(l, "master.disable_btn", "마스터 스위치 끄기");
             Add(l, "misc.section", "3. 기타 기능 (Miscellaneous)");
-            Add(l, "misc.editor_toggle", "항상 레벨 에디터 허용 (공식 레벨에서도 에디터 사용 가능)");
             Add(l, "misc.ring_toggle", "행성 판정 링 숨기기 (점선 원 숨김)");
             Add(l, "misc.autoplay_plus_toggle", "자동 재생+ 활성화 (KeyViewer 연동 키 시뮬레이션 및 플레이어 입력 차단)");
             Add(l, "misc.autoplay_keys_label", "허용된 키 (최대 16개, 공백 구분):");
@@ -673,7 +669,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "MODマスタースイッチは有効です");
             Add(l, "master.disable_btn", "マスタースイッチを無効化");
             Add(l, "misc.section", "3. その他機能 (Miscellaneous)");
-            Add(l, "misc.editor_toggle", "常にレベルエディタの使用を許可 (公式ステージでも使用可能)");
             Add(l, "misc.ring_toggle", "惑星の判定リングを非表示 (点線の円を非表示)");
             Add(l, "misc.autoplay_plus_toggle", "オートプレイ+を有効化 (KeyViewer対応のキーストローク模擬 & プレイヤー入力遮断)");
             Add(l, "misc.autoplay_keys_label", "使用可能なキー (最大16個、空白区切り):");
@@ -787,7 +782,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "Interruptor maestro activado");
             Add(l, "master.disable_btn", "Desactivar interruptor maestro");
             Add(l, "misc.section", "3. Miscelánea");
-            Add(l, "misc.editor_toggle", "Permitir siempre el editor de niveles (incluso en niveles oficiales)");
             Add(l, "misc.ring_toggle", "Ocultar anillo de juicio del planeta (oculta el círculo punteado)");
             Add(l, "misc.autoplay_plus_toggle", "Activar Reproducción Automática+ (simula pulsaciones de teclas para KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Teclas permitidas (máx 16, separadas por espacio):");
@@ -894,7 +888,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "Мастер-переключатель включен");
             Add(l, "master.disable_btn", "Выключить мастер-переключатель");
             Add(l, "misc.section", "3. Разное");
-            Add(l, "misc.editor_toggle", "Всегда разрешать редактор уровней (даже на официальных уровнях)");
             Add(l, "misc.ring_toggle", "Скрыть кольцо суждения планет (пунктирный круг)");
             Add(l, "misc.autoplay_plus_toggle", "Включить Автовоспроизведение+ (эмуляция клавиш для KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Разрешенные клавиши (макс. 16, через пробел):");
@@ -1001,7 +994,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "Hauptschalter ist AKTIV");
             Add(l, "master.disable_btn", "Hauptschalter deaktivieren");
             Add(l, "misc.section", "3. Sonstiges");
-            Add(l, "misc.editor_toggle", "Leveleditor immer erlauben (auch in offiziellen Leveln)");
             Add(l, "misc.ring_toggle", "Planeten-Urteilsring ausblenden (gestrichelte Linie)");
             Add(l, "misc.autoplay_plus_toggle", "Autoplay+ aktivieren (Tastensimulation für KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Erlaubte Tasten (max 16, getrennt durch Leerzeichen):");
@@ -1066,7 +1058,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "Interrupteur principal activé");
             Add(l, "master.disable_btn", "Désactiver l'interrupteur principal");
             Add(l, "misc.section", "3. Divers");
-            Add(l, "misc.editor_toggle", "Toujours autoriser l'éditeur de niveaux (même dans les niveaux officiels)");
             Add(l, "misc.ring_toggle", "Masquer l'anneau de jugement des planètes (cercle pointillé)");
             Add(l, "misc.autoplay_plus_toggle", "Activer Autoplay+ (simulation de touches pour KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Touches autorisées (max 16, séparées par un espace):");
@@ -1131,7 +1122,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "Interruptor principal ativado");
             Add(l, "master.disable_btn", "Desativar interruptor principal");
             Add(l, "misc.section", "3. Diversos");
-            Add(l, "misc.editor_toggle", "Sempre permitir editor de níveis (mesmo em níveis oficiais)");
             Add(l, "misc.ring_toggle", "Ocultar anel de julgamento do planeta (círculo pontilhado)");
             Add(l, "misc.autoplay_plus_toggle", "Ativar Autoplay+ (simulação de teclas para KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Teclas permitidas (máx 16, separadas por espaço):");
@@ -1196,7 +1186,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "Główny przełącznik włączony");
             Add(l, "master.disable_btn", "Wyłącz główny przełącznik");
             Add(l, "misc.section", "3. Różne");
-            Add(l, "misc.editor_toggle", "Zawsze zezwalaj na edytor poziomów (również na poziomach oficjalnych)");
             Add(l, "misc.ring_toggle", "Ukryj pierścień oceny planet (przerywany okrąg)");
             Add(l, "misc.autoplay_plus_toggle", "Włącz Autoplay+ (symulacja klawiszy dla KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Dozwolone klawisze (maks. 16, oddzielone spacją):");
@@ -1261,7 +1250,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "Công tắc chính đã bật");
             Add(l, "master.disable_btn", "Tắt công tắc chính");
             Add(l, "misc.section", "3. Khác");
-            Add(l, "misc.editor_toggle", "Luôn cho phép trình chỉnh sửa màn chơi (ngay cả trong màn chơi chính thức)");
             Add(l, "misc.ring_toggle", "Ẩn vòng phán đoán hành tinh (vòng chấm tròn)");
             Add(l, "misc.autoplay_plus_toggle", "Bật Tự động chơi+ (mô phỏng phím cho KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Các phím được phép (tối đa 16, cách nhau bằng dấu cách):");
@@ -1326,7 +1314,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "Hlavní vypínač je zapnut");
             Add(l, "master.disable_btn", "Vypnout hlavní vypínač");
             Add(l, "misc.section", "3. Různé");
-            Add(l, "misc.editor_toggle", "Vždy povolit editor úrovní (i v oficiálních úrovních)");
             Add(l, "misc.ring_toggle", "Skrýt kroužek hodnocení planety (tečkovaný kruh)");
             Add(l, "misc.autoplay_plus_toggle", "Povolit Automatické přehrávání+ (simulace kláves pro KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Povolené klávesy (max. 16, oddělené mezerou):");
@@ -1391,7 +1378,6 @@ namespace ADOFAIPlusPlus
             Add(l, "master.status_on", "Comutatorul principal este activat");
             Add(l, "master.disable_btn", "Dezactivează comutatorul principal");
             Add(l, "misc.section", "3. Diverse");
-            Add(l, "misc.editor_toggle", "Permite întotdeauna editorul de niveluri (chiar și în niveluri oficiale)");
             Add(l, "misc.ring_toggle", "Ascunde inelul de judecată al planetelor (cercul punctat)");
             Add(l, "misc.autoplay_plus_toggle", "Activează Redare automată+ (simulare taste pentru KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Taste permise (max 16, separate prin spațiu):");
