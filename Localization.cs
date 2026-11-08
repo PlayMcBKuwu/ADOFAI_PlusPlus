@@ -697,12 +697,12 @@ namespace ADOFAIPlusPlus
             Add(l, "hud.custom", "カスタム判定");
             Add(l, "diff.mobile", "モバイル");
             Add(l, "diff.custom", "カスタム");
-            Add(l, "indicator.normal", "通常");
-            Add(l, "indicator.lenient", "優しい");
+            Add(l, "indicator.normal", "標準");
+            Add(l, "indicator.lenient", "緩和");
             Add(l, "indicator.tooEarly", "早すぎ");
             Add(l, "indicator.tooLate", "遅すぎ");
-            Add(l, "results.normal", "通常");
-            Add(l, "results.lenient", "優しい");
+            Add(l, "results.normal", "標準");
+            Add(l, "results.lenient", "緩和");
 
             Add(l, "ui.language_label", "言語設定 (Language)");
             Add(l, "ui.lang.auto", "ゲームに合わせる (Auto)");

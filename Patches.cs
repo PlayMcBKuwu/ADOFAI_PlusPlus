@@ -1517,10 +1517,10 @@ namespace ADOFAIPlusPlus
 
                 if (AutoplayBot.IsActive() && planet != null)
                 {
-                    missAngle = 0f;
+                    missAngle = (float)(planet.targetExitAngle - planet.cachedAngle);
                 }
 
-                if (!Main.Enabled || Main.Settings.Mode != JudgmentMode.Disabled || !Main.Settings.EnableHitIndicator)
+                if (!Main.Enabled || !Main.Settings.MasterEnabled || !Main.Settings.EnableHitIndicator)
                     return;
 
                 bool isCounted = (hitMargin == HitMargin.VeryEarly || hitMargin == HitMargin.VeryLate);
@@ -1603,46 +1603,27 @@ namespace ADOFAIPlusPlus
                     rawMs = (int)Math.Round(timeDiffSec * 1000.0);
                 }
 
-                bool isNormalTier = false;
-                bool isLenientTier = false;
+                // 依次用游戏原生精确参数测算 Strict / Normal / Lenient
+                HitMargin strictRes = EvaluateDifficultyMargin(Difficulty.Strict, timeDiffSec, floorBpmVal, pitchVal, marginScale);
+                bool isStrictPass = HitMarginHelper.IsCounted(strictRes, HitMarginLimit.None);
 
-                if (isCounted)
+                // 核心守卫 2：只要严判成立（无论处于何种难度或练习模式倍速），均不触发标判/宽判指示器！
+                if (isStrictPass)
                 {
-                    if (GCS.difficulty == Difficulty.Normal)
-                    {
-                        // 在标准判定 (Normal) 下打出及格 (VeryEarly / VeryLate)，属于标判及格保命
-                        isNormalTier = true;
-                    }
-                    else if (GCS.difficulty == Difficulty.Lenient)
-                    {
-                        // 在宽松判定 (Lenient) 下打出及格：若落入标准判定区间则为标判保命，否则为宽判保命
-                        HitMargin normalRes = EvaluateDifficultyMargin(Difficulty.Normal, timeDiffSec, floorBpmVal, pitchVal, marginScale);
-                        if (HitMarginHelper.IsCounted(normalRes, HitMarginLimit.None))
-                        {
-                            isNormalTier = true;
-                        }
-                        else
-                        {
-                            isLenientTier = true;
-                        }
-                    }
+                    return;
                 }
-                else if (isDoubleFail)
+
+                HitMargin normalRes = EvaluateDifficultyMargin(Difficulty.Normal, timeDiffSec, floorBpmVal, pitchVal, marginScale);
+                HitMargin lenientRes = EvaluateDifficultyMargin(Difficulty.Lenient, timeDiffSec, floorBpmVal, pitchVal, marginScale);
+
+                bool isNormalTier = HitMarginHelper.IsCounted(normalRes, HitMarginLimit.None);
+                bool isLenientTier = !isNormalTier && HitMarginHelper.IsCounted(lenientRes, HitMarginLimit.None);
+
+                // 核心守卫 3：若当前处于「标准判定 (Normal)」且本次为及格命中 (isCounted)，它必然已通过标判，绝不可能降级为宽判
+                if (isCounted && GCS.difficulty == Difficulty.Normal)
                 {
-                    // 失误比对 (DoubleHitIndicator)：测试失误击打是否能落入标准判定或宽松判定窗口
-                    HitMargin normalRes = EvaluateDifficultyMargin(Difficulty.Normal, timeDiffSec, floorBpmVal, pitchVal, marginScale);
-                    if (HitMarginHelper.IsCounted(normalRes, HitMarginLimit.None))
-                    {
-                        isNormalTier = true;
-                    }
-                    else
-                    {
-                        HitMargin lenientRes = EvaluateDifficultyMargin(Difficulty.Lenient, timeDiffSec, floorBpmVal, pitchVal, marginScale);
-                        if (HitMarginHelper.IsCounted(lenientRes, HitMarginLimit.None))
-                        {
-                            isLenientTier = true;
-                        }
-                    }
+                    isNormalTier = true;
+                    isLenientTier = false;
                 }
 
                 if (!isNormalTier && !isLenientTier)
@@ -1712,27 +1693,54 @@ namespace ADOFAIPlusPlus
                     Color borderCol = CurrentIndicator.OutlineColor;
                     bool colorShaderBorder = (Main.Settings == null || Main.Settings.ColorHitTextBorder);
 
+                    // 确保 xPerfectBorder 使用与主文本一致的字体 asset 与 material，彻底避免 CJK 缺字漏显
+                    if (__instance.text != null && __instance.xPerfectBorder.font != __instance.text.font)
+                    {
+                        __instance.xPerfectBorder.font = __instance.text.font;
+                        __instance.xPerfectBorder.fontSharedMaterial = __instance.text.fontSharedMaterial;
+                    }
+
+                    __instance.xPerfectBorder.gameObject.SetActive(true);
+                    if (__instance.text != null)
+                    {
+                        __instance.xPerfectBorder.text = __instance.text.text;
+                    }
+                    __instance.xPerfectBorder.color = borderCol;
+
                     if (colorShaderBorder)
                     {
-                        if (RDConstants.data != null && RDConstants.data.chineseFontTMProXPerfectBorderMaterial != null && Loc.IsCJK())
-                        {
-                            __instance.xPerfectBorder.fontSharedMaterial = RDConstants.data.chineseFontTMProXPerfectBorderMaterial;
-                        }
-                        __instance.xPerfectBorder.gameObject.SetActive(true);
-                        if (__instance.text != null)
-                        {
-                            __instance.xPerfectBorder.text = __instance.text.text;
-                        }
-                        __instance.xPerfectBorder.color = borderCol;
-
-                        __instance.xPerfectBorder.DOKill();
-                        __instance.xPerfectBorder.DOFade(0f, 0.7f / fadeSpeed)
-                            .SetDelay(0.5f / fadeSpeed)
-                            .SetEase(Ease.OutQuad);
+                        __instance.xPerfectBorder.faceColor = borderCol;
+                        __instance.xPerfectBorder.outlineColor = borderCol;
                     }
-                }
+                    else
+                    {
+                        __instance.xPerfectBorder.faceColor = Color.white;
+                        __instance.xPerfectBorder.outlineColor = Color.white;
+                    }
 
-                CurrentIndicator = null;
+                    try
+                    {
+                        Material borderMat = __instance.xPerfectBorder.fontMaterial;
+                        if (borderMat != null)
+                        {
+                            Color matCol = colorShaderBorder ? borderCol : Color.white;
+                            if (borderMat.HasProperty(ShaderUtilities.ID_OutlineColor))
+                                borderMat.SetColor(ShaderUtilities.ID_OutlineColor, matCol);
+                            if (borderMat.HasProperty(ShaderUtilities.ID_FaceColor))
+                                borderMat.SetColor(ShaderUtilities.ID_FaceColor, Color.white);
+                            if (borderMat.HasProperty(ShaderUtilities.ID_UnderlayColor))
+                                borderMat.SetColor(ShaderUtilities.ID_UnderlayColor, matCol);
+                            if (borderMat.HasProperty(ShaderUtilities.ID_GlowColor))
+                                borderMat.SetColor(ShaderUtilities.ID_GlowColor, matCol);
+                        }
+                    }
+                    catch {}
+
+                    __instance.xPerfectBorder.DOKill();
+                    __instance.xPerfectBorder.DOFade(0f, 0.7f / fadeSpeed)
+                        .SetDelay(0.5f / fadeSpeed)
+                        .SetEase(Ease.OutQuad);
+                }
             }
         }
 
@@ -2067,16 +2075,13 @@ namespace ADOFAIPlusPlus
         /// <summary>
         /// 18. 不死模式与自动播放快捷键及状态常驻（兼容官谱与任何模式；主界面仅保留水印，不修改判定/不锁自动）
         /// 全场景高灵敏 ESC 响应：自定义关卡菜单退出/返回/关闭面板，关卡内可靠暂停/继续与模拟按键释放
+        /// <summary>
+        /// 18. 不死模式与自动播放快捷键及状态常驻（兼容官谱与任何模式；主界面仅保留水印，不修改判定/不锁自动）
         /// </summary>
         [HarmonyPatch(typeof(scrController), "Update")]
         public static class Patch_ScrController_Update
         {
-            public static void Prefix(scrController __instance, out bool __state)
-            {
-                __state = (__instance != null && __instance.paused);
-            }
-
-            public static void Postfix(scrController __instance, bool __state)
+            public static void Postfix(scrController __instance)
             {
                 if (!Main.Enabled || !Main.Settings.MasterEnabled)
                     return;
@@ -2085,59 +2090,10 @@ namespace ADOFAIPlusPlus
 
                 bool inPlayable = IsInPlayableLevel();
 
-                // 全场景高灵敏 ESC 按键处理
-                if (Input.GetKeyDown(KeyCode.Escape))
+                // 自动播放+运行中按 ESC 释放所有模拟按键，原生 TogglePauseGame/PauseMenu 自行负责暂停与恢复
+                if (AutoplayBot.IsActive() && inPlayable && Input.GetKeyDown(KeyCode.Escape))
                 {
-                    // 场景 A: 自定义关卡菜单 / 选曲界面 (scnCLS)
-                    if (ADOBase.isCLS || scnCLS.instance != null)
-                    {
-                        scnCLS cls = scnCLS.instance ?? ADOBase.cls;
-                        if (cls != null)
-                        {
-                            if (cls.optionsPanels != null && cls.optionsPanels.showingAnyPanel)
-                            {
-                                cls.optionsPanels.HideAnyPanel();
-                                cls.optionsPanels.justHidPanels = true;
-                            }
-                            else if (cls.importLevelPanel != null && cls.importLevelPanel.gameObject != null && cls.importLevelPanel.gameObject.activeSelf)
-                            {
-                                cls.CloseImportPanel();
-                            }
-                            else if (__instance != null && __instance.paused)
-                            {
-                                __instance.TogglePauseGame();
-                            }
-                            else
-                            {
-                                string curFolder = (F_ClsCurrentFolderName != null) ? F_ClsCurrentFolderName.GetValue(cls) as string : null;
-                                if (!string.IsNullOrEmpty(curFolder))
-                                {
-                                    cls.ExitFolder();
-                                }
-                                else
-                                {
-                                    cls.QuitPortal();
-                                }
-                            }
-                        }
-                    }
-                    // 场景 B: 可游玩关卡 (自定义关卡与官方关卡)
-                    else if (inPlayable && __instance != null)
-                    {
-                        if (AutoplayBot.IsActive())
-                        {
-                            AutoplayBot.ReleaseAllKeys();
-                        }
-
-                        if (!__state && !__instance.paused)
-                        {
-                            __instance.TogglePauseGame();
-                        }
-                        else if (__state && __instance.paused && __instance.pauseMenu != null && __instance.pauseMenu.gameObject.activeSelf)
-                        {
-                            __instance.pauseMenu.BackButtonAction(false);
-                        }
-                    }
+                    AutoplayBot.ReleaseAllKeys();
                 }
 
                 // 仅在可游玩关卡内记录当前尝试使用的判定模式
@@ -2415,16 +2371,27 @@ namespace ADOFAIPlusPlus
         }
 
         /// <summary>
-        /// 21f. 自动播放+：零延迟向局内 KV 模组（如 CharonKV）注入 Input.GetKey 状态，并彻底隔离玩家物理按键对 KV 的干扰
+        /// 21f. 自动播放+：零延迟向局内 KV 模组（如 CharonKV）注入 Input.GetKey 状态（仅补全模拟按键点亮，绝不拦截物理按键与系统组合键）
         /// </summary>
         [HarmonyPatch(typeof(Input), "GetKey", new Type[] { typeof(KeyCode) })]
         public static class Patch_Input_GetKey
         {
             public static void Postfix(KeyCode key, ref bool __result)
             {
+                if (key == KeyCode.LeftAlt || key == KeyCode.RightAlt || key == KeyCode.LeftShift || key == KeyCode.RightShift ||
+                    key == KeyCode.LeftControl || key == KeyCode.RightControl || key == KeyCode.LeftWindows || key == KeyCode.RightWindows ||
+                    key == KeyCode.Escape || key == KeyCode.F10 || key == KeyCode.F1)
+                    return;
+
+                if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt) || Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+                    return;
+
                 if (AutoplayBot.IsPlayingInLevel() && AutoplayBot.IsTrackedGameplayKey(key))
                 {
-                    __result = AutoplayBot.IsSimulatingKey(key);
+                    if (AutoplayBot.IsSimulatingKey(key))
+                    {
+                        __result = true;
+                    }
                 }
             }
         }
@@ -2434,25 +2401,47 @@ namespace ADOFAIPlusPlus
         {
             public static void Postfix(string name, ref bool __result)
             {
+                if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt) || Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+                    return;
+
                 KeyCode code;
                 if (AutoplayBot.IsPlayingInLevel() && AutoplayBot.TryGetKeyCodeByName(name, out code) && AutoplayBot.IsTrackedGameplayKey(code))
                 {
-                    __result = AutoplayBot.IsSimulatingKey(code);
+                    if (code == KeyCode.LeftAlt || code == KeyCode.RightAlt || code == KeyCode.LeftShift || code == KeyCode.RightShift ||
+                        code == KeyCode.LeftControl || code == KeyCode.RightControl || code == KeyCode.LeftWindows || code == KeyCode.RightWindows ||
+                        code == KeyCode.Escape || code == KeyCode.F10 || code == KeyCode.F1)
+                        return;
+
+                    if (AutoplayBot.IsSimulatingKey(code))
+                    {
+                        __result = true;
+                    }
                 }
             }
         }
 
         /// <summary>
-        /// 21g. 自动播放+：零延迟向局内 KV 模组注入 Input.GetKeyDown 状态，并彻底隔离玩家物理按键对 KV 的干扰
+        /// 21g. 自动播放+：零延迟向局内 KV 模组注入 Input.GetKeyDown 状态（仅补全模拟按键点亮，绝不拦截物理按键与快捷键）
         /// </summary>
         [HarmonyPatch(typeof(Input), "GetKeyDown", new Type[] { typeof(KeyCode) })]
         public static class Patch_Input_GetKeyDown
         {
             public static void Postfix(KeyCode key, ref bool __result)
             {
+                if (key == KeyCode.LeftAlt || key == KeyCode.RightAlt || key == KeyCode.LeftShift || key == KeyCode.RightShift ||
+                    key == KeyCode.LeftControl || key == KeyCode.RightControl || key == KeyCode.LeftWindows || key == KeyCode.RightWindows ||
+                    key == KeyCode.Escape || key == KeyCode.F10 || key == KeyCode.F1)
+                    return;
+
+                if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt) || Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+                    return;
+
                 if (AutoplayBot.IsPlayingInLevel() && AutoplayBot.IsTrackedGameplayKey(key))
                 {
-                    __result = AutoplayBot.IsSimulatingKeyDown(key);
+                    if (AutoplayBot.IsSimulatingKeyDown(key))
+                    {
+                        __result = true;
+                    }
                 }
             }
         }
@@ -2462,25 +2451,47 @@ namespace ADOFAIPlusPlus
         {
             public static void Postfix(string name, ref bool __result)
             {
+                if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt) || Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+                    return;
+
                 KeyCode code;
                 if (AutoplayBot.IsPlayingInLevel() && AutoplayBot.TryGetKeyCodeByName(name, out code) && AutoplayBot.IsTrackedGameplayKey(code))
                 {
-                    __result = AutoplayBot.IsSimulatingKeyDown(code);
+                    if (code == KeyCode.LeftAlt || code == KeyCode.RightAlt || code == KeyCode.LeftShift || code == KeyCode.RightShift ||
+                        code == KeyCode.LeftControl || code == KeyCode.RightControl || code == KeyCode.LeftWindows || code == KeyCode.RightWindows ||
+                        code == KeyCode.Escape || code == KeyCode.F10 || code == KeyCode.F1)
+                        return;
+
+                    if (AutoplayBot.IsSimulatingKeyDown(code))
+                    {
+                        __result = true;
+                    }
                 }
             }
         }
 
         /// <summary>
-        /// 21h. 自动播放+：零延迟向局内 KV 模组注入 Input.GetKeyUp 状态，并彻底隔离玩家物理按键对 KV 的干扰
+        /// 21h. 自动播放+：零延迟向局内 KV 模组注入 Input.GetKeyUp 状态（仅补全模拟按键释放，绝不拦截物理按键）
         /// </summary>
         [HarmonyPatch(typeof(Input), "GetKeyUp", new Type[] { typeof(KeyCode) })]
         public static class Patch_Input_GetKeyUp
         {
             public static void Postfix(KeyCode key, ref bool __result)
             {
+                if (key == KeyCode.LeftAlt || key == KeyCode.RightAlt || key == KeyCode.LeftShift || key == KeyCode.RightShift ||
+                    key == KeyCode.LeftControl || key == KeyCode.RightControl || key == KeyCode.LeftWindows || key == KeyCode.RightWindows ||
+                    key == KeyCode.Escape || key == KeyCode.F10 || key == KeyCode.F1)
+                    return;
+
+                if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt) || Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+                    return;
+
                 if (AutoplayBot.IsPlayingInLevel() && AutoplayBot.IsTrackedGameplayKey(key))
                 {
-                    __result = AutoplayBot.IsSimulatingKeyUp(key);
+                    if (AutoplayBot.IsSimulatingKeyUp(key))
+                    {
+                        __result = true;
+                    }
                 }
             }
         }
@@ -2490,10 +2501,21 @@ namespace ADOFAIPlusPlus
         {
             public static void Postfix(string name, ref bool __result)
             {
+                if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt) || Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+                    return;
+
                 KeyCode code;
                 if (AutoplayBot.IsPlayingInLevel() && AutoplayBot.TryGetKeyCodeByName(name, out code) && AutoplayBot.IsTrackedGameplayKey(code))
                 {
-                    __result = AutoplayBot.IsSimulatingKeyUp(code);
+                    if (code == KeyCode.LeftAlt || code == KeyCode.RightAlt || code == KeyCode.LeftShift || code == KeyCode.RightShift ||
+                        code == KeyCode.LeftControl || code == KeyCode.RightControl || code == KeyCode.LeftWindows || code == KeyCode.RightWindows ||
+                        code == KeyCode.Escape || code == KeyCode.F10 || code == KeyCode.F1)
+                        return;
+
+                    if (AutoplayBot.IsSimulatingKeyUp(code))
+                    {
+                        __result = true;
+                    }
                 }
             }
         }

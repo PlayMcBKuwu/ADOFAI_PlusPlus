@@ -87,7 +87,7 @@ namespace ADOFAIPlusPlus
         /// <summary>
         /// 当前判定模式
         /// </summary>
-        public JudgmentMode Mode = JudgmentMode.Mobile;
+        public JudgmentMode Mode = JudgmentMode.Disabled;
 
         /// <summary>
         /// 自定义判定单位模式（时间 ms vs 角度 °）
