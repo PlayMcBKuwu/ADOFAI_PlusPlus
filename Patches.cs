@@ -635,6 +635,20 @@ namespace ADOFAIPlusPlus
             UpdateHUDText();
         }
 
+        public static string GetAutoplayPlusText()
+        {
+            try
+            {
+                string baseAuto = RDString.Get("status.autoplay", null);
+                if (!string.IsNullOrEmpty(baseAuto))
+                {
+                    return baseAuto + "+";
+                }
+            }
+            catch {}
+            return Loc.Get("hud.autoplay_plus");
+        }
+
         public static void ApplyJapaneseFontPreference()
         {
             try
@@ -741,7 +755,7 @@ namespace ADOFAIPlusPlus
                     if (Main.Enabled && Main.Settings != null && Main.Settings.MasterEnabled && Main.Settings.AutoplayPlus)
                     {
                         txt.enabled = true;
-                        txt.text = Loc.Get("hud.autoplay_plus");
+                        txt.text = GetAutoplayPlusText();
                         if (ADOBase.editor != null && ADOBase.editor.pausedInPlayMode)
                         {
                             txt.text = txt.text + " + " + RDString.Get("status.paused", null);
@@ -1076,7 +1090,7 @@ namespace ADOFAIPlusPlus
                     if (autoPlusTxt != null)
                     {
                         autoPlusTxt.enabled = true;
-                        autoPlusTxt.text = Loc.Get("hud.autoplay_plus");
+                        autoPlusTxt.text = GetAutoplayPlusText();
                         if (ADOBase.editor != null && ADOBase.editor.pausedInPlayMode)
                         {
                             autoPlusTxt.text = autoPlusTxt.text + " + " + RDString.Get("status.paused", null);
@@ -2074,14 +2088,10 @@ namespace ADOFAIPlusPlus
 
                 bool inPlayable = IsInPlayableLevel();
 
-                // 自动播放+运行中允许按 ESC 暂停游戏并释放所有模拟按键
+                // 自动播放+运行中按 ESC 释放所有模拟按键，由原版 RDInput.cancelPress 触发 TogglePauseGame
                 if (AutoplayBot.IsActive() && inPlayable && Input.GetKeyDown(KeyCode.Escape))
                 {
-                    if (__instance != null && !__instance.paused)
-                    {
-                        AutoplayBot.ReleaseAllKeys();
-                        __instance.TogglePauseGame();
-                    }
+                    AutoplayBot.ReleaseAllKeys();
                 }
 
                 // 仅在可游玩关卡内记录当前尝试使用的判定模式
@@ -2096,8 +2106,9 @@ namespace ADOFAIPlusPlus
                     UsedCustomThisAttempt = false;
                 }
 
-                // 快捷键监听：Alt + N 切换不死，Alt + A 切换自动播放
+                // 快捷键监听：Alt + N 切换不死，Alt + Shift + A 切换自动播放+，Alt + A 切换标准自动播放
                 bool holdingAlt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
+                bool holdingShift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
                 if (holdingAlt && Input.GetKeyDown(KeyCode.N))
                 {
@@ -2110,7 +2121,17 @@ namespace ADOFAIPlusPlus
                     }
                 }
 
-                if (holdingAlt && Input.GetKeyDown(KeyCode.A))
+                if (holdingAlt && holdingShift && Input.GetKeyDown(KeyCode.A))
+                {
+                    Main.Settings.AutoplayPlus = !Main.Settings.AutoplayPlus;
+                    ApplyAutoplayPlus(Main.Settings.AutoplayPlus);
+                    Main.Settings.Save(Main.ModEntry);
+                    if (scrSfx.instance != null)
+                    {
+                        scrSfx.instance.PlaySfx(Main.Settings.AutoplayPlus ? SfxSound.ModifierActivate : SfxSound.ModifierDeactivate, MixerGroup.InterfaceParent);
+                    }
+                }
+                else if (holdingAlt && Input.GetKeyDown(KeyCode.A))
                 {
                     Main.Settings.Autoplay = !Main.Settings.Autoplay;
                     ApplyAutoplay(Main.Settings.Autoplay);
@@ -2536,6 +2557,45 @@ namespace ADOFAIPlusPlus
             }
         }
 
+        public static void ExportTextureToPNG(Texture2D tex, string destPath)
+        {
+            if (tex == null || string.IsNullOrEmpty(destPath)) return;
+            try
+            {
+                if (System.IO.File.Exists(destPath)) return;
+                byte[] pngBytes = null;
+                try
+                {
+                    pngBytes = ImageConversion.EncodeToPNG(tex);
+                }
+                catch {}
+
+                if (pngBytes == null || pngBytes.Length == 0)
+                {
+                    RenderTexture rt = RenderTexture.GetTemporary(tex.width, tex.height, 0, RenderTextureFormat.ARGB32);
+                    Graphics.Blit(tex, rt);
+                    RenderTexture prev = RenderTexture.active;
+                    RenderTexture.active = rt;
+                    Texture2D readable = new Texture2D(tex.width, tex.height, TextureFormat.RGBA32, false);
+                    readable.ReadPixels(new Rect(0, 0, tex.width, tex.height), 0, 0);
+                    readable.Apply();
+                    RenderTexture.active = prev;
+                    RenderTexture.ReleaseTemporary(rt);
+                    pngBytes = ImageConversion.EncodeToPNG(readable);
+                    UnityEngine.Object.Destroy(readable);
+                }
+
+                if (pngBytes != null && pngBytes.Length > 0)
+                {
+                    System.IO.File.WriteAllBytes(destPath, pngBytes);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[ADOFAI++] Failed to export texture to PNG: " + ex.Message);
+            }
+        }
+
         public static void ExportOfficialLevelAndOpenInEditor(PauseMenu pm)
         {
             try
@@ -2594,6 +2654,73 @@ namespace ADOFAIPlusPlus
                     }
                 }
 
+                // 导出官方关卡外部资源（图片、装饰贴图、背景图）：
+                // 1. 从 scrDecorationManager.instance.imageHolder 导出所有已加载贴图
+                try
+                {
+                    if (scrDecorationManager.instance != null && scrDecorationManager.instance.imageHolder != null)
+                    {
+                        TextureManager th = scrDecorationManager.instance.imageHolder;
+                        if (th.customTextures != null)
+                        {
+                            foreach (var kvp in th.customTextures)
+                            {
+                                if (kvp.Value != null && kvp.Value.texture != null)
+                                {
+                                    string fName = System.IO.Path.GetFileName(kvp.Key);
+                                    if (string.IsNullOrEmpty(fName)) fName = kvp.Value.texture.name + ".png";
+                                    if (!fName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) fName += ".png";
+                                    ExportTextureToPNG(kvp.Value.texture, System.IO.Path.Combine(exportDir, fName));
+                                }
+                            }
+                        }
+                        if (th.customSprites != null)
+                        {
+                            foreach (var kvp in th.customSprites)
+                            {
+                                if (kvp.Value != null && kvp.Value.texture != null)
+                                {
+                                    string fName = System.IO.Path.GetFileName(kvp.Key);
+                                    if (string.IsNullOrEmpty(fName)) fName = kvp.Value.texture.name + ".png";
+                                    if (!fName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) fName += ".png";
+                                    ExportTextureToPNG(kvp.Value.texture, System.IO.Path.Combine(exportDir, fName));
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[ADOFAI++] Failed to export decoration manager textures: " + ex.Message);
+                }
+
+                // 2. 导出场景中所有 SpriteRenderer 贴图（防止遗漏背景或特效贴图）
+                try
+                {
+                    SpriteRenderer[] renderers = UnityEngine.Object.FindObjectsOfType<SpriteRenderer>();
+                    if (renderers != null)
+                    {
+                        for (int i = 0; i < renderers.Length; i++)
+                        {
+                            SpriteRenderer sr = renderers[i];
+                            if (sr != null && sr.sprite != null && sr.sprite.texture != null)
+                            {
+                                string sName = sr.sprite.name;
+                                if (string.IsNullOrEmpty(sName)) sName = sr.sprite.texture.name;
+                                if (!string.IsNullOrEmpty(sName))
+                                {
+                                    if (!sName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) sName += ".png";
+                                    ExportTextureToPNG(sr.sprite.texture, System.IO.Path.Combine(exportDir, sName));
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[ADOFAI++] Failed to export scene sprite textures: " + ex.Message);
+                }
+
                 ADOFAI.LevelData ld = null;
                 if (scnGame.instance != null && scnGame.instance.levelData != null)
                 {
@@ -2619,6 +2746,40 @@ namespace ADOFAIPlusPlus
                     {
                         exportLd.isOldLevel = false;
                         exportLd.pathData = "";
+                    }
+
+                    // 规范化装饰图片路径为文件名相对路径
+                    if (exportLd.decorations != null)
+                    {
+                        for (int i = 0; i < exportLd.decorations.Count; i++)
+                        {
+                            var deco = exportLd.decorations[i];
+                            if (deco != null && deco.ContainsKey("decorationImage"))
+                            {
+                                string img = deco.GetString("decorationImage");
+                                if (!string.IsNullOrEmpty(img))
+                                {
+                                    deco["decorationImage"] = System.IO.Path.GetFileName(img);
+                                }
+                            }
+                        }
+                    }
+
+                    // 规范化背景图片路径
+                    if (exportLd.levelEvents != null)
+                    {
+                        for (int i = 0; i < exportLd.levelEvents.Count; i++)
+                        {
+                            var lev = exportLd.levelEvents[i];
+                            if (lev != null && lev.ContainsKey("bgImage"))
+                            {
+                                string bg = lev.GetString("bgImage");
+                                if (!string.IsNullOrEmpty(bg))
+                                {
+                                    lev["bgImage"] = System.IO.Path.GetFileName(bg);
+                                }
+                            }
+                        }
                     }
 
                     string json = exportLd.Encode();
@@ -2697,16 +2858,7 @@ namespace ADOFAIPlusPlus
                         }
                     }
                 }
-
-                if (F_CurrentButtons != null)
-                {
-                    List<GeneralPauseButton> curList = F_CurrentButtons.GetValue(__instance) as List<GeneralPauseButton>;
-                    if (curList != null && !curList.Contains(openBtn))
-                    {
-                        int idx = Math.Max(0, curList.Count - 1);
-                        curList.Insert(idx, openBtn);
-                    }
-                }
+                // 绝不在此处修改 currentButtons，避免破坏按键索引 index 导致设置等子菜单无法点击
             }
         }
 
@@ -2751,11 +2903,15 @@ namespace ADOFAIPlusPlus
                 PauseButton pb = buttons[selectedIndex] as PauseButton;
                 if (pb != null && pb.buttonType == PauseMenu.ButtonType.LevelEditor)
                 {
-                    if (!ADOBase.customLevel || ADOBase.isOfficialLevel || ADOBase.isInternalLevel || ADOBase.isDLCLevel)
+                    // 若当前已经是自定义关卡（硬盘上存在实际文件）或正在编辑器中，绝不拦截！直接由原版处理！
+                    bool isRealCustomLevel = (scnGame.instance != null && !string.IsNullOrEmpty(scnGame.instance.levelPath) && System.IO.File.Exists(scnGame.instance.levelPath));
+                    if (ADOBase.isLevelEditor || isRealCustomLevel)
                     {
-                        ExportOfficialLevelAndOpenInEditor(__instance);
-                        return false;
+                        return true;
                     }
+
+                    ExportOfficialLevelAndOpenInEditor(__instance);
+                    return false;
                 }
                 return true;
             }

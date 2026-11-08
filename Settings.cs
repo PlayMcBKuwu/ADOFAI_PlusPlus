@@ -202,6 +202,11 @@ namespace ADOFAIPlusPlus
         public bool AutoplayPlus = false;
 
         /// <summary>
+        /// 自动播放+：惯用手偏好（默认右手优先 P，关闭为左手优先 E）
+        /// </summary>
+        public bool PreferRightHand = true;
+
+        /// <summary>
         /// 自动播放+：拟人目标 X 精准度 (50% ~ 100%)
         /// </summary>
         public float AutoplayAccuracy = 100f;
