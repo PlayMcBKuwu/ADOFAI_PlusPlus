@@ -1677,9 +1677,7 @@ namespace ADOFAIPlusPlus
             [HarmonyPriority(Priority.Last)]
             public static void Postfix(scrHitTextMesh __instance, float fadeSpeed, string customText)
             {
-                // 排除毫秒误差/X-Score 附加副文本的子调用（副文本 customText 非空）
-                if (!string.IsNullOrEmpty(customText))
-                    return;
+                // 允许覆盖副文本与主判定文本，统一显示高优先级指示器
 
                 if (CurrentIndicator == null || !__instance.gameObject.activeSelf)
                     return;
@@ -2509,318 +2507,145 @@ namespace ADOFAIPlusPlus
         private static readonly FieldInfo F_CurrentButtons = AccessTools.Field(typeof(PauseMenu), "currentButtons");
         private static readonly FieldInfo F_SelectedIndex = AccessTools.Field(typeof(PauseMenu), "selectedIndex");
 
-        public static void SaveClipToWav(AudioClip clip, string path)
-        {
-            if (clip == null || string.IsNullOrEmpty(path)) return;
-            float[] samples = new float[clip.samples * clip.channels];
-            MethodInfo mGetData = typeof(AudioClip).GetMethod("GetData", new Type[] { typeof(float[]), typeof(int) });
-            if (mGetData != null)
-            {
-                mGetData.Invoke(clip, new object[] { samples, 0 });
-            }
+        public static bool IsOpeningOfficialInEditorInMemory = false;
+        public static ADOFAI.LevelData PendingMemoryLevelData = null;
+        public static AudioClip PendingMemoryAudioClip = null;
 
-            using (System.IO.FileStream fs = new System.IO.FileStream(path, System.IO.FileMode.Create))
-            using (System.IO.BinaryWriter bw = new System.IO.BinaryWriter(fs))
-            {
-                int channels = clip.channels;
-                int sampleRate = clip.frequency;
-                int subChunk2Size = samples.Length * 2;
-                int chunkSize = 36 + subChunk2Size;
-
-                byte[] riffTag = new byte[] { 0x52, 0x49, 0x46, 0x46 }; // "RIFF"
-                byte[] waveTag = new byte[] { 0x57, 0x41, 0x56, 0x45 }; // "WAVE"
-                byte[] fmtTag  = new byte[] { 0x66, 0x6D, 0x74, 0x20 }; // "fmt "
-                byte[] dataTag = new byte[] { 0x64, 0x61, 0x74, 0x61 }; // "data"
-
-                bw.Write(riffTag);
-                bw.Write(chunkSize);
-                bw.Write(waveTag);
-                bw.Write(fmtTag);
-                bw.Write(16);
-                bw.Write((short)1);
-                bw.Write((short)channels);
-                bw.Write(sampleRate);
-                bw.Write(sampleRate * channels * 2);
-                bw.Write((short)(channels * 2));
-                bw.Write((short)16);
-                bw.Write(dataTag);
-                bw.Write(subChunk2Size);
-
-                for (int i = 0; i < samples.Length; i++)
-                {
-                    float f = samples[i];
-                    if (f > 1f) f = 1f;
-                    else if (f < -1f) f = -1f;
-                    short s = (short)(f * 32767f);
-                    bw.Write(s);
-                }
-            }
-        }
-
-        public static void ExportTextureToPNG(Texture2D tex, string destPath)
-        {
-            if (tex == null || string.IsNullOrEmpty(destPath)) return;
-            try
-            {
-                if (System.IO.File.Exists(destPath)) return;
-                byte[] pngBytes = null;
-                try
-                {
-                    pngBytes = ImageConversion.EncodeToPNG(tex);
-                }
-                catch {}
-
-                if (pngBytes == null || pngBytes.Length == 0)
-                {
-                    RenderTexture rt = RenderTexture.GetTemporary(tex.width, tex.height, 0, RenderTextureFormat.ARGB32);
-                    Graphics.Blit(tex, rt);
-                    RenderTexture prev = RenderTexture.active;
-                    RenderTexture.active = rt;
-                    Texture2D readable = new Texture2D(tex.width, tex.height, TextureFormat.RGBA32, false);
-                    readable.ReadPixels(new Rect(0, 0, tex.width, tex.height), 0, 0);
-                    readable.Apply();
-                    RenderTexture.active = prev;
-                    RenderTexture.ReleaseTemporary(rt);
-                    pngBytes = ImageConversion.EncodeToPNG(readable);
-                    UnityEngine.Object.Destroy(readable);
-                }
-
-                if (pngBytes != null && pngBytes.Length > 0)
-                {
-                    System.IO.File.WriteAllBytes(destPath, pngBytes);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning("[ADOFAI++] Failed to export texture to PNG: " + ex.Message);
-            }
-        }
-
-        public static void ExportOfficialLevelAndOpenInEditor(PauseMenu pm)
+        /// <summary>
+        /// 纯内存官谱/DLC唤起编辑器：零硬盘写入，零资源丢失，直接通过内存引用将官方谱面与原生音频安全移交编辑器
+        /// </summary>
+        public static void OpenOfficialLevelInEditorInMemory(PauseMenu pm)
         {
             try
             {
-                string levelName = GCS.internalLevelName;
-                if (string.IsNullOrEmpty(levelName))
+                if (scnGame.instance == null || scnGame.instance.levelData == null)
                 {
-                    levelName = ADOBase.currentLevel;
-                }
-                if (string.IsNullOrEmpty(levelName))
-                {
-                    levelName = "OfficialLevel";
-                }
-
-                char[] invalidChars = System.IO.Path.GetInvalidFileNameChars();
-                string safeName = levelName;
-                for (int i = 0; i < invalidChars.Length; i++)
-                {
-                    safeName = safeName.Replace(invalidChars[i], '_');
-                }
-
-                string baseDir = System.IO.Path.Combine(System.IO.Directory.GetParent(Application.dataPath).FullName, "CustomLevels");
-                string exportDir = System.IO.Path.Combine(baseDir, "Official_" + safeName);
-                if (!System.IO.Directory.Exists(exportDir))
-                {
-                    System.IO.Directory.CreateDirectory(exportDir);
-                }
-
-                string adofaiPath = System.IO.Path.Combine(exportDir, "main.adofai");
-                string wavPath = System.IO.Path.Combine(exportDir, "song.wav");
-
-                AudioClip clip = null;
-                if (scrConductor.instance != null && scrConductor.instance.song != null)
-                {
-                    clip = scrConductor.instance.song.clip;
-                }
-                else if (ADOBase.conductor != null && ADOBase.conductor.song != null)
-                {
-                    clip = ADOBase.conductor.song.clip;
-                }
-
-                bool hasAudio = false;
-                if (clip != null)
-                {
-                    try
-                    {
-                        if (!System.IO.File.Exists(wavPath))
-                        {
-                            SaveClipToWav(clip, wavPath);
-                        }
-                        hasAudio = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning("[ADOFAI++] Failed to export audio clip to WAV: " + ex.Message);
-                    }
-                }
-
-                // 导出官方关卡外部资源（图片、装饰贴图、背景图）：
-                // 1. 从 scrDecorationManager.instance.imageHolder 导出所有已加载贴图
-                try
-                {
-                    if (scrDecorationManager.instance != null && scrDecorationManager.instance.imageHolder != null)
-                    {
-                        TextureManager th = scrDecorationManager.instance.imageHolder;
-                        if (th.customTextures != null)
-                        {
-                            foreach (var kvp in th.customTextures)
-                            {
-                                if (kvp.Value != null && kvp.Value.texture != null)
-                                {
-                                    string fName = System.IO.Path.GetFileName(kvp.Key);
-                                    if (string.IsNullOrEmpty(fName)) fName = kvp.Value.texture.name + ".png";
-                                    if (!fName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) fName += ".png";
-                                    ExportTextureToPNG(kvp.Value.texture, System.IO.Path.Combine(exportDir, fName));
-                                }
-                            }
-                        }
-                        if (th.customSprites != null)
-                        {
-                            foreach (var kvp in th.customSprites)
-                            {
-                                if (kvp.Value != null && kvp.Value.texture != null)
-                                {
-                                    string fName = System.IO.Path.GetFileName(kvp.Key);
-                                    if (string.IsNullOrEmpty(fName)) fName = kvp.Value.texture.name + ".png";
-                                    if (!fName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) fName += ".png";
-                                    ExportTextureToPNG(kvp.Value.texture, System.IO.Path.Combine(exportDir, fName));
-                                }
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning("[ADOFAI++] Failed to export decoration manager textures: " + ex.Message);
-                }
-
-                // 2. 导出场景中所有 SpriteRenderer 贴图（防止遗漏背景或特效贴图）
-                try
-                {
-                    SpriteRenderer[] renderers = UnityEngine.Object.FindObjectsOfType<SpriteRenderer>();
-                    if (renderers != null)
-                    {
-                        for (int i = 0; i < renderers.Length; i++)
-                        {
-                            SpriteRenderer sr = renderers[i];
-                            if (sr != null && sr.sprite != null && sr.sprite.texture != null)
-                            {
-                                string sName = sr.sprite.name;
-                                if (string.IsNullOrEmpty(sName)) sName = sr.sprite.texture.name;
-                                if (!string.IsNullOrEmpty(sName))
-                                {
-                                    if (!sName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) sName += ".png";
-                                    ExportTextureToPNG(sr.sprite.texture, System.IO.Path.Combine(exportDir, sName));
-                                }
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning("[ADOFAI++] Failed to export scene sprite textures: " + ex.Message);
-                }
-
-                ADOFAI.LevelData ld = null;
-                if (scnGame.instance != null && scnGame.instance.levelData != null)
-                {
-                    ld = scnGame.instance.levelData;
-                }
-
-                if (ld != null)
-                {
-                    ADOFAI.LevelData exportLd = ld.Copy();
-                    if (hasAudio)
-                    {
-                        exportLd.songFilename = "song.wav";
-                    }
-
-                    if ((exportLd.angleData == null || exportLd.angleData.Count == 0) && !string.IsNullOrEmpty(exportLd.pathData))
-                    {
-                        float[] angles = ADOFAI.FloorHelper.MigratePathData(exportLd.pathData);
-                        exportLd.angleData = new List<float>(angles);
-                        exportLd.pathData = "";
-                        exportLd.isOldLevel = false;
-                    }
-                    else
-                    {
-                        exportLd.isOldLevel = false;
-                        exportLd.pathData = "";
-                    }
-
-                    // 规范化装饰图片路径为文件名相对路径
-                    if (exportLd.decorations != null)
-                    {
-                        for (int i = 0; i < exportLd.decorations.Count; i++)
-                        {
-                            var deco = exportLd.decorations[i];
-                            if (deco != null && deco.ContainsKey("decorationImage"))
-                            {
-                                string img = deco.GetString("decorationImage");
-                                if (!string.IsNullOrEmpty(img))
-                                {
-                                    deco["decorationImage"] = System.IO.Path.GetFileName(img);
-                                }
-                            }
-                        }
-                    }
-
-                    // 规范化背景图片路径
-                    if (exportLd.levelEvents != null)
-                    {
-                        for (int i = 0; i < exportLd.levelEvents.Count; i++)
-                        {
-                            var lev = exportLd.levelEvents[i];
-                            if (lev != null && lev.ContainsKey("bgImage"))
-                            {
-                                string bg = lev.GetString("bgImage");
-                                if (!string.IsNullOrEmpty(bg))
-                                {
-                                    lev["bgImage"] = System.IO.Path.GetFileName(bg);
-                                }
-                            }
-                        }
-                    }
-
-                    string json = exportLd.Encode();
-                    System.IO.File.WriteAllText(adofaiPath, json, System.Text.Encoding.UTF8);
-                }
-                else
-                {
-                    Debug.LogError("[ADOFAI++] LevelData is null during official level export!");
+                    Debug.LogError("[ADOFAI++] scnGame.instance.levelData is null during official level opening!");
                     return;
                 }
+
+                // 1. 保留当前正在播放的官方原生完整 AudioClip（标记 DontDestroyOnLoad 防止场景卸载销毁）
+                if (scrConductor.instance != null && scrConductor.instance.song != null && scrConductor.instance.song.clip != null)
+                {
+                    PendingMemoryAudioClip = scrConductor.instance.song.clip;
+                    UnityEngine.Object.DontDestroyOnLoad(PendingMemoryAudioClip);
+                }
+
+                // 2. 引用当前关卡的 LevelData，修复旧谱 pathData 导致的乱码并补全角度数据
+                ADOFAI.LevelData exportLd = scnGame.instance.levelData;
+                if ((exportLd.angleData == null || exportLd.angleData.Count == 0) && !string.IsNullOrEmpty(exportLd.pathData))
+                {
+                    float[] angles = ADOFAI.FloorHelper.MigratePathData(exportLd.pathData);
+                    exportLd.angleData = new System.Collections.Generic.List<float>(angles);
+                    exportLd.pathData = "";
+                    exportLd.isOldLevel = false;
+                }
+                else if (exportLd.angleData == null || exportLd.angleData.Count == 0)
+                {
+                    if (scrLevelMaker.instance != null && scrLevelMaker.instance.listFloors != null && scrLevelMaker.instance.listFloors.Count > 0)
+                    {
+                        System.Collections.Generic.List<float> angles = new System.Collections.Generic.List<float>();
+                        System.Collections.Generic.List<scrFloor> fls = scrLevelMaker.instance.listFloors;
+                        for (int i = 0; i < fls.Count; i++)
+                        {
+                            angles.Add((float)(fls[i].exitangle * (180.0 / Math.PI)));
+                        }
+                        exportLd.angleData = angles;
+                        exportLd.pathData = "";
+                        exportLd.isOldLevel = false;
+                    }
+                }
+
+                PendingMemoryLevelData = exportLd;
+                IsOpeningOfficialInEditorInMemory = true;
 
                 if (pm != null)
                 {
                     pm.Hide();
                 }
-                DOTween.KillAll();
+                DOTween.KillAll(false);
                 if (scrConductor.instance != null && scrConductor.instance.song != null)
                 {
                     scrConductor.instance.song.Stop();
                 }
 
-                GCS.internalLevelName = null;
-                GCS.customLevelPaths = new string[] { adofaiPath };
-                GCS.customLevelIndex = 0;
-                GCS.customLevelId = "Official_" + safeName;
-                if (scnGame.instance != null)
+                scnEditor.levelToOpenOnLoad = "__IN_MEMORY_OFFICIAL__.adofai";
+                if (ADOBase.loader != null)
                 {
-                    scnGame.instance.levelPath = adofaiPath;
+                    ADOBase.loader.LoadScene("scnEditor");
                 }
-                scnEditor.levelToOpenOnLoad = adofaiPath;
-
-                UnityEngine.SceneManagement.SceneManager.LoadScene("scnEditor");
+                else
+                {
+                    UnityEngine.SceneManagement.SceneManager.LoadScene("scnEditor");
+                }
             }
             catch (Exception e)
             {
-                Debug.LogError("[ADOFAI++] Error exporting official level to editor: " + e);
+                Debug.LogError("[ADOFAI++] Error opening official level in editor: " + e);
             }
         }
 
         /// <summary>
-        /// 始终允许关卡编辑器：在官方关卡暂停菜单中强制添加「在关卡编辑器中打开」按钮
+        /// 关卡编辑器纯内存拦截：拦截 scnGame.LoadLevel，直接注入已无损解析好的官方关卡数据，零硬盘占用
+        /// </summary>
+        [HarmonyPatch(typeof(scnGame), "LoadLevel")]
+        public static class Patch_ScnGame_LoadLevel
+        {
+            public static bool Prefix(scnGame __instance, string levelPath, ref ADOFAI.LoadResult status, ref bool __result)
+            {
+                if (IsOpeningOfficialInEditorInMemory && PendingMemoryLevelData != null)
+                {
+                    __instance.levelData = PendingMemoryLevelData;
+                    __instance.levelPath = levelPath;
+                    status = ADOFAI.LoadResult.Successful;
+                    __result = true;
+                    return false;
+                }
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// 关卡编辑器音频加载拦截：防止编辑器尝试从空路径网络加载音频，直接复用内存中原生官方 AudioClip
+        /// </summary>
+        [HarmonyPatch(typeof(scnGame), "ReloadSong")]
+        public static class Patch_ScnGame_ReloadSong
+        {
+            public static bool Prefix(scnGame __instance)
+            {
+                if (IsOpeningOfficialInEditorInMemory && PendingMemoryAudioClip != null)
+                {
+                    if (scrConductor.instance != null && scrConductor.instance.song != null)
+                    {
+                        scrConductor.instance.song.clip = PendingMemoryAudioClip;
+                    }
+                    return false;
+                }
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// 关卡编辑器音频内存注入：将内存中保留的原生官方 AudioClip 注入给编辑器的 Conductor，并恢复内存加载标志
+        /// </summary>
+        [HarmonyPatch(typeof(scnEditor), "UpdateSongAndLevelSettings")]
+        public static class Patch_ScnEditor_UpdateSongAndLevelSettings
+        {
+            public static void Postfix(scnEditor __instance)
+            {
+                if (IsOpeningOfficialInEditorInMemory)
+                {
+                    if (scrConductor.instance != null && scrConductor.instance.song != null && PendingMemoryAudioClip != null)
+                    {
+                        scrConductor.instance.song.clip = PendingMemoryAudioClip;
+                    }
+                    IsOpeningOfficialInEditorInMemory = false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 始终允许关卡编辑器：仅在真正关卡游玩中（排除主页面、选关大厅与自由漫游）向暂停菜单添加「在关卡编辑器中打开」
         /// </summary>
         [HarmonyPatch(typeof(PauseMenu), "RefreshLayout")]
         public static class Patch_PauseMenu_RefreshLayout
@@ -2829,6 +2654,11 @@ namespace ADOFAIPlusPlus
             {
                 if (!Main.Enabled || Main.Settings == null || !Main.Settings.MasterEnabled || !Main.Settings.AlwaysAllowEditor)
                     return;
+
+                // 核心防线：绝不在主界面大厅、自由漫游、选关界面或编辑器内部强插按钮
+                if (!ADOBase.isScnGame || ADOBase.isLevelSelect || ADOBase.isFreeroamScene || ADOBase.isLevelEditor)
+                    return;
+
                 if (__instance == null || F_OpenInEditorButton == null || F_PauseButtons == null)
                     return;
 
@@ -2858,7 +2688,6 @@ namespace ADOFAIPlusPlus
                         }
                     }
                 }
-                // 绝不在此处修改 currentButtons，避免破坏按键索引 index 导致设置等子菜单无法点击
             }
         }
 
@@ -2869,6 +2698,10 @@ namespace ADOFAIPlusPlus
             {
                 if (!Main.Enabled || Main.Settings == null || !Main.Settings.MasterEnabled || !Main.Settings.AlwaysAllowEditor)
                     return;
+
+                if (!ADOBase.isScnGame || ADOBase.isLevelSelect || ADOBase.isFreeroamScene || ADOBase.isLevelEditor)
+                    return;
+
                 if (__instance == null || F_OpenInEditorButton == null)
                     return;
 
@@ -2881,7 +2714,7 @@ namespace ADOFAIPlusPlus
         }
 
         /// <summary>
-        /// 始终允许关卡编辑器：点击「在关卡编辑器中打开」时，若为官谱/DLC/内置谱则导出为干净自定义谱面并唤起编辑器
+        /// 始终允许关卡编辑器：点击「在关卡编辑器中打开」时，若为官谱/DLC/内置谱则纯内存唤起；自定义关卡保持原生处理
         /// </summary>
         [HarmonyPatch(typeof(PauseMenu), "Choose")]
         public static class Patch_PauseMenu_Choose
@@ -2890,6 +2723,10 @@ namespace ADOFAIPlusPlus
             {
                 if (!Main.Enabled || Main.Settings == null || !Main.Settings.MasterEnabled || !Main.Settings.AlwaysAllowEditor)
                     return true;
+
+                if (!ADOBase.isScnGame || ADOBase.isLevelSelect || ADOBase.isFreeroamScene || ADOBase.isLevelEditor)
+                    return true;
+
                 if (__instance == null || F_CurrentButtons == null || F_SelectedIndex == null)
                     return true;
 
@@ -2910,7 +2747,7 @@ namespace ADOFAIPlusPlus
                         return true;
                     }
 
-                    ExportOfficialLevelAndOpenInEditor(__instance);
+                    OpenOfficialLevelInEditorInMemory(__instance);
                     return false;
                 }
                 return true;

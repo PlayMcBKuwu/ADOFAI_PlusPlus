@@ -487,22 +487,24 @@ namespace ADOFAIPlusPlus
 
                 double absDegOffset;
 
+                // 官方底层真正的 X-Perfect 判定严格边界为 bounds.XPerfect
+                // pureBound (bounds.Pure) 实际上包含了 -完美 (PerfectMinus) 与 完美+ (PerfectPlus)！
+                double xBound = (bounds.XPerfect > 0.0) ? bounds.XPerfect : (pureBound * 0.35);
+
                 if (targetAccPercent >= 99.99f)
                 {
-                    // === 100% X-精准度模拟 ===
-                    // 真实人类 100% X-精准度绝不是 0ms 死线！
-                    // 人类的微动作抖动在 Pure (X-Perfect) 窗口内平滑振荡：
-                    // 绝不越过 pureBound，保证 100% 每一击都是 X-Perfect！
-                    // 真实角度偏移注入给 planet.cachedAngle，使误击量计 (Hit Error Meter) 在中心自然波动！
-                    double sigma = pureBound * 0.22;
+                    // === 100% 纯 X-精准度模拟 ===
+                    // 严格限制在 xBound (纯 X-Perfect) 窗口内部微幅振荡，确保绝对不溢出到 -完美 或 完美+！
+                    // 真实角度偏移注入给 planet.cachedAngle，使误击量计 (Hit Error Meter) 在中心自然微波动！
+                    double sigma = xBound * 0.25;
                     double jitter = (_correlatedBias * 0.6 + stdNormal * 0.4) * sigma;
-                    absDegOffset = Math.Min(pureBound * 0.55, Math.Abs(jitter));
+                    absDegOffset = Math.Min(xBound * 0.70, Math.Abs(jitter));
                 }
                 else
                 {
                     // === < 100% 目标精准度连续高斯模拟 ===
                     // 废除离散台阶式跳变！使用连续正态分布自然溢出：
-                    // 目标精准度越低，高斯标准差 sigma 越宽，使部分击打自然延伸至 Early/Late Perfect 区间
+                    // 目标精准度越低，高斯标准差 sigma 越宽，使部分击打自然延伸至 Perfect / Early / Late 甚至及格区间
                     double accError = currentXAcc - targetXAcc;
                     double pPerfectTarget = Math.Max(0.0, Math.Min(1.0, (1.0 - targetXAcc) / 0.25));
                     pPerfectTarget = Math.Max(0.0, Math.Min(1.0, pPerfectTarget + accError * 2.5));
@@ -544,11 +546,11 @@ namespace ADOFAIPlusPlus
                     (float)pitch,
                     marginScale);
 
-                // 100% 目标下强制保证判定为 X-Perfect
-                if (targetAccPercent >= 99.99f && verifiedMargin != HitMargin.PerfectPlus && verifiedMargin != HitMargin.XPerfect && verifiedMargin != HitMargin.PerfectMinus)
+                // 100% 目标下强制保证判定 100% 为纯正 X-Perfect，绝对不可掉落为 -完美 (PerfectMinus) 或 完美+ (PerfectPlus)
+                if (targetAccPercent >= 99.99f && verifiedMargin != HitMargin.XPerfect)
                 {
-                    candidateAngle = planet.targetExitAngle + (isCW ? 0.001 : -0.001);
-                    verifiedMargin = HitMargin.PerfectPlus;
+                    candidateAngle = planet.targetExitAngle + (isCW ? 0.0001 : -0.0001);
+                    verifiedMargin = HitMargin.XPerfect;
                 }
 
                 if (HitMarginHelper.IsCounted(verifiedMargin, GCS.hitMarginLimit))
