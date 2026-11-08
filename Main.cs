@@ -767,19 +767,6 @@ namespace ADOFAIPlusPlus
                 else if (chooseLeft && curRight) Settings.PreferRightHand = false;
                 GUILayout.EndHorizontal();
 
-                GUILayout.Space(4);
-
-                // 拟人目标 X 精准度滑块与快捷按钮
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("<b>" + string.Format(Loc.Get("misc.autoplay_acc_label"), Settings.AutoplayAccuracy) + "</b>", GUILayout.Width(460));
-                float rawAcc = GUILayout.HorizontalSlider(Settings.AutoplayAccuracy, 50f, 100f, GUILayout.Width(200));
-                Settings.AutoplayAccuracy = (float)Math.Round(rawAcc * 2f) / 2f;
-                if (GUILayout.Button("100%", GUILayout.Width(52))) Settings.AutoplayAccuracy = 100f;
-                if (GUILayout.Button("99.5%", GUILayout.Width(55))) Settings.AutoplayAccuracy = 99.5f;
-                if (GUILayout.Button("98%", GUILayout.Width(48))) Settings.AutoplayAccuracy = 98f;
-                if (GUILayout.Button("95%", GUILayout.Width(48))) Settings.AutoplayAccuracy = 95f;
-                GUILayout.EndHorizontal();
-
                 GUILayout.Space(8);
                 GUILayout.Label("<b>" + Loc.Get("misc.autoplay_keys_label") + "</b>");
                 GUILayout.Label("<i><color=#bbbbbb>" + Loc.Get("misc.autoplay_keys_hint") + "</color></i>");

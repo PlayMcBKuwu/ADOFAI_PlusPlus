@@ -78,10 +78,6 @@ namespace ADOFAIPlusPlus
         private static scrFloor _activeHoldFloor = null;
         private static scrFloor _skipTapFloor = null;
 
-        // 待在 scrPlanet.SwitchChosen Prefix 中应用的拟人缓存角度（弧度 rad）
-        private static bool _hasPendingAngle = false;
-        private static double _pendingCandidateAngle = 0.0;
-
         // 拟人排键状态机
         private static double _lastHitTime = -10.0;
         private static int _dominantHand = 1; // 0 = 左手 (E), 1 = 右手 (P)
@@ -100,12 +96,8 @@ namespace ADOFAIPlusPlus
         private static object _jOverlayInstance = null;
         private static bool _jipperChecked = false;
 
-        // 闭环 X-Accuracy 统计与自相关误差发生器
+        // 拟人按键离散度与微时差随机发生器
         private static readonly System.Random _rng = new System.Random();
-        private static double _correlatedBias = 0.0;
-        private static double _simulatedWeightedAccSum = 0.0;
-        private static int _simulatedHitCount = 0;
-        private static bool _lastEarlyLateSign = false;
 
         // 缓存所有可绑定的 KeyCode 枚举值
         private static KeyCode[] _allKeyCodes;
@@ -263,8 +255,6 @@ namespace ADOFAIPlusPlus
         {
             _pendingPresses.Clear();
             ReleaseAllKeys();
-            _hasPendingAngle = false;
-            _pendingCandidateAngle = 0.0;
             _lastHitTime = -10.0;
             _dominantHand = (Main.Settings != null && Main.Settings.PreferRightHand) ? 1 : 0;
             _altHandParity = _dominantHand;
@@ -274,9 +264,6 @@ namespace ADOFAIPlusPlus
             _roll16Cursor = 0;
             _lastUsedSlot = -1;
             _secondLastUsedSlot = -1;
-            _correlatedBias = 0.0;
-            _simulatedWeightedAccSum = 0.0;
-            _simulatedHitCount = 0;
         }
 
         public static void ReleaseAllKeys()
@@ -397,7 +384,6 @@ namespace ADOFAIPlusPlus
         public static void OnAutoHit(scrPlayer player, ref long? hitTick, out bool tempUseOldAuto)
         {
             tempUseOldAuto = false;
-            _hasPendingAngle = false;
 
             if (!IsPlayingInLevel() || player == null)
                 return;
@@ -528,205 +514,13 @@ namespace ADOFAIPlusPlus
                 }
             }
 
-            // 2. 拟人目标 X 精准度计算（在合法及格边界内平滑注入高斯抖动，非自动砖/非中旋/非长条松尾时生效）
-            float targetAccPercent = Main.Settings.AutoplayAccuracy;
-            if (isAutoTile || isHoldReleaseOnly)
-            {
-                return;
-            }
-
-            if ((currFloor != null && currFloor.midSpin) || (nextFloor != null && nextFloor.midSpin))
-            {
-                NotifyJipperTiming(0f);
-                return;
-            }
-
-            ApplyHumanizedAccuracyOffset(planet, currFloor, nextFloor, targetAccPercent, ref hitTick, out tempUseOldAuto);
+            // 2. 同步驱动 JipperResourcePack 的 Timing 显示为 0 误差纯 X 完美
+            NotifyJipperTiming(0f);
         }
 
-        /// <summary>
-        /// 在 scrPlanet.SwitchChosen(long? hitTick) Prefix 中调用：
-        /// 此时 scrPlayer.Hit 已执行完 cachedAngle = angle，在此处写入拟人角度即可同时生效于 SwitchChosen 与 UpdateHitErrorMeter
-        /// </summary>
         public static void ApplyPendingAngleToPlanet(scrPlanet planet, ref long? hitTick)
         {
-            if (_hasPendingAngle && planet != null && IsActive())
-            {
-                planet.cachedAngle = _pendingCandidateAngle;
-                hitTick = null;
-                _hasPendingAngle = false;
-            }
-        }
-
-        private static void ApplyHumanizedAccuracyOffset(
-            scrPlanet planet,
-            scrFloor currFloor,
-            scrFloor nextFloor,
-            float targetAccPercent,
-            ref long? hitTick,
-            out bool tempUseOldAuto)
-        {
-            tempUseOldAuto = false;
-
-            try
-            {
-                double pitch = 1.0;
-                double baseBpm = 100.0;
-                double speed = 1.0;
-
-                if (planet.conductor != null)
-                {
-                    baseBpm = planet.conductor.bpm;
-                    if (planet.conductor.song != null && planet.conductor.song.pitch > 0f)
-                    {
-                        pitch = (double)planet.conductor.song.pitch;
-                    }
-                }
-                if (planet.planetarySystem != null && planet.planetarySystem.speed > 0.0)
-                {
-                    speed = planet.planetarySystem.speed;
-                }
-
-                float bpmTimesSpeed = (float)(baseBpm * speed);
-                if (bpmTimesSpeed <= 0f) bpmTimesSpeed = 100f;
-
-                double marginScale = 1.0;
-                if (currFloor != null && currFloor.marginScale > 0.0)
-                {
-                    marginScale = currFloor.marginScale;
-                }
-
-                Difficulty diff = GCS.difficulty;
-                scrMisc.HitMarginGeneralWithXPerfectValues<double> bounds =
-                    scrMisc.GetAdjustedAngleBoundaryInDeg(diff, (double)bpmTimesSpeed, pitch, marginScale);
-
-                double pureBound = bounds.Pure;
-                double perfectBound = bounds.Perfect;
-                double countedBound = bounds.Counted;
-
-                if (pureBound <= 0.001 || countedBound <= pureBound + 0.05)
-                {
-                    return;
-                }
-
-                double targetXAcc = Math.Max(0.50, Math.Min(1.0, (double)targetAccPercent / 100.0));
-                double currentXAcc = (_simulatedHitCount > 0)
-                    ? (_simulatedWeightedAccSum / (double)_simulatedHitCount)
-                    : targetXAcc;
-
-                // 更新自相关人类生理节奏漂移（AR(1) 过程：alpha = 0.65，模拟生理微惯性）
-                double u1 = Math.Max(1e-7, _rng.NextDouble());
-                double u2 = _rng.NextDouble();
-                double stdNormal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
-                _correlatedBias = 0.65 * _correlatedBias + 0.35 * stdNormal;
-
-                double absDegOffset;
-
-                // 官方底层真正的 X-Perfect 判定严格边界为 bounds.XPerfect
-                // pureBound (bounds.Pure) 实际上包含了 -完美 (PerfectMinus) 与 完美+ (PerfectPlus)！
-                double xBound = (bounds.XPerfect > 0.0) ? bounds.XPerfect : (pureBound * 0.35);
-
-                if (targetAccPercent >= 99.99f)
-                {
-                    // === 100% 纯 X-精准度模拟 ===
-                    // 严格限制在 xBound (纯 X-Perfect) 窗口内部微幅振荡，确保绝对不溢出到 -完美 或 完美+！
-                    // 真实角度偏移注入给 planet.cachedAngle，使误击量计 (Hit Error Meter) 在中心自然微波动！
-                    double sigma = xBound * 0.25;
-                    double jitter = (_correlatedBias * 0.6 + stdNormal * 0.4) * sigma;
-                    absDegOffset = Math.Min(xBound * 0.70, Math.Abs(jitter));
-                }
-                else
-                {
-                    // === < 100% 目标精准度连续高斯模拟 ===
-                    // 废除离散台阶式跳变！使用连续正态分布自然溢出：
-                    // 目标精准度越低，高斯标准差 sigma 越宽，使部分击打自然延伸至 Perfect / Early / Late 甚至及格区间
-                    double accError = currentXAcc - targetXAcc;
-                    double pPerfectTarget = Math.Max(0.0, Math.Min(1.0, (1.0 - targetXAcc) / 0.25));
-                    pPerfectTarget = Math.Max(0.0, Math.Min(1.0, pPerfectTarget + accError * 2.5));
-
-                    double sigmaFactor = 0.22 + pPerfectTarget * 0.60;
-                    double rawError = (_correlatedBias * 0.55 + stdNormal * 0.45) * (pureBound * sigmaFactor);
-                    absDegOffset = Math.Abs(rawError);
-
-                    double safeMax = (countedBound > 0.1) ? countedBound * 0.85 : pureBound;
-                    if (absDegOffset > safeMax)
-                    {
-                        absDegOffset = safeMax;
-                    }
-                }
-
-                bool isLate;
-                if (Math.Abs(_correlatedBias) > 0.15)
-                {
-                    isLate = (_correlatedBias > 0.0);
-                }
-                else
-                {
-                    isLate = (_rng.NextDouble() < 0.70) ? _lastEarlyLateSign : !_lastEarlyLateSign;
-                }
-                _lastEarlyLateSign = isLate;
-
-                double absRadOffset = absDegOffset * (Math.PI / 180.0);
-                bool isCW = (planet.planetarySystem != null) ? planet.planetarySystem.isCW : (currFloor == null || !currFloor.isCCW);
-                double signedRadDiff = isLate ? absRadOffset : -absRadOffset;
-                double candidateAngle = planet.targetExitAngle + (isCW ? signedRadDiff : -signedRadDiff);
-
-                // 终极安全校验：直接调用游戏底层 GetHitMarginInDeg
-                HitMargin verifiedMargin = scrMisc.GetHitMarginInDeg(
-                    diff,
-                    (float)candidateAngle,
-                    (float)planet.targetExitAngle,
-                    isCW,
-                    bpmTimesSpeed,
-                    (float)pitch,
-                    marginScale);
-
-                // 100% 目标下强制保证判定 100% 为纯正 X-Perfect，绝对不可掉落为 -完美 (PerfectMinus) 或 完美+ (PerfectPlus)
-                if (targetAccPercent >= 99.99f && verifiedMargin != HitMargin.XPerfect)
-                {
-                    candidateAngle = planet.targetExitAngle + (isCW ? 0.0001 : -0.0001);
-                    verifiedMargin = HitMargin.XPerfect;
-                }
-
-                // 同步驱动 JipperResourcePack 的 Timing 显示与刻度尺
-                double timeDiffSec = (pitch > 0 && bpmTimesSpeed > 0)
-                    ? (scrMisc.AngleToTime(signedRadDiff, bpmTimesSpeed) / pitch)
-                    : (signedRadDiff / (2.0 * Math.PI));
-                float timingMs = (float)(timeDiffSec * 1000.0);
-                NotifyJipperTiming(timingMs);
-
-                if (HitMarginHelper.IsCounted(verifiedMargin, GCS.hitMarginLimit))
-                {
-                    _hasPendingAngle = true;
-                    _pendingCandidateAngle = candidateAngle;
-                    planet.cachedAngle = candidateAngle;
-                    hitTick = null;
-                    tempUseOldAuto = true; // 关键：使 scrController.UpdateHitErrorMeter 不被强制归零！
-
-                    double weight = 1.0;
-                    if (verifiedMargin == HitMargin.EarlyPerfect || verifiedMargin == HitMargin.LatePerfect)
-                    {
-                        weight = 0.75;
-                    }
-                    else if (verifiedMargin == HitMargin.VeryEarly || verifiedMargin == HitMargin.VeryLate)
-                    {
-                        weight = 0.001;
-                    }
-
-                    _simulatedWeightedAccSum += weight;
-                    _simulatedHitCount++;
-                }
-                else
-                {
-                    _simulatedWeightedAccSum += 1.0;
-                    _simulatedHitCount++;
-                }
-            }
-            catch
-            {
-                _hasPendingAngle = false;
-                tempUseOldAuto = false;
-            }
+            // 精准度控制器已移除，命中以 100% 纯正原生角度结算
         }
 
         private static double GetLookaheadIntervalSec(scrFloor nextFloor, scrPlanet planet)

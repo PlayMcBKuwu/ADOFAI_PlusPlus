@@ -202,11 +202,6 @@ namespace ADOFAIPlusPlus
         public bool PreferRightHand = true;
 
         /// <summary>
-        /// 自动播放+：拟人目标 X 精准度 (50% ~ 100%)
-        /// </summary>
-        public float AutoplayAccuracy = 100f;
-
-        /// <summary>
         /// 自动播放+：16 键位绑定槽位（2行 x 8列，对应 CharonKV 布局）
         /// </summary>
         public KeyCode[] AutoplayKeyBindings = new KeyCode[]
@@ -274,9 +269,6 @@ namespace ADOFAIPlusPlus
                 }
                 AutoplayKeyBindings = defaults;
             }
-
-            if (AutoplayAccuracy < 50f) AutoplayAccuracy = 50f;
-            if (AutoplayAccuracy > 100f) AutoplayAccuracy = 100f;
         }
 
         public void SaveToProfile(int slot)

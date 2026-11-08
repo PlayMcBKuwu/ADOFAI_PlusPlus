@@ -208,7 +208,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_hand_label", "惯用手偏好 (单指平点与主按键):");
             Add(l, "misc.autoplay_hand_right", "右手优先 (P)");
             Add(l, "misc.autoplay_hand_left", "左手优先 (E)");
-            Add(l, "misc.autoplay_acc_label", "拟人目标 X 精准度: {0:0.##}% (闭环控制在合法及格边界内注入生理节奏抖动，绝不死)");
             Add(l, "hud.autoplay_plus", "自动播放+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -329,7 +328,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_hand_label", "慣用手偏好 (單指平點與主按鍵):");
             Add(l, "misc.autoplay_hand_right", "右手優先 (P)");
             Add(l, "misc.autoplay_hand_left", "左手優先 (E)");
-            Add(l, "misc.autoplay_acc_label", "擬人目標 X 精準度: {0:0.##}% (閉環控制在合法及格邊界內注入生理節奏抖動，絕不死)");
             Add(l, "hud.autoplay_plus", "自動播放+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -450,7 +448,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_hand_label", "Dominant Hand (Single taps & Primary finger):");
             Add(l, "misc.autoplay_hand_right", "Right Hand (P)");
             Add(l, "misc.autoplay_hand_left", "Left Hand (E)");
-            Add(l, "misc.autoplay_acc_label", "Human Target X-Accuracy: {0:0.##}% (Closed-loop humanized variance within safe Counted bounds)");
             Add(l, "hud.autoplay_plus", "Autoplay+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -563,7 +560,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_hand_label", "주로 쓰는 손 (단일 타격 및 주 손가락):");
             Add(l, "misc.autoplay_hand_right", "오른손 우선 (P)");
             Add(l, "misc.autoplay_hand_left", "왼손 우선 (E)");
-            Add(l, "misc.autoplay_acc_label", "인간 목표 정확도: {0:0}% (현실적인 타이밍 편차 적용)");
             Add(l, "hud.autoplay_plus", "자동 재생+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -676,7 +672,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_hand_label", "利き手設定 (単打連打 & メイン指):");
             Add(l, "misc.autoplay_hand_right", "右手優先 (P)");
             Add(l, "misc.autoplay_hand_left", "左手優先 (E)");
-            Add(l, "misc.autoplay_acc_label", "目標精度: {0:0}% (人間らしい反応ジッターを付与)");
             Add(l, "hud.autoplay_plus", "オートプレイ+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -786,7 +781,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_plus_toggle", "Activar Reproducción Automática+ (simula pulsaciones de teclas para KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Teclas permitidas (máx 16, separadas por espacio):");
             Add(l, "misc.autoplay_preset_btn", "Restablecer teclas predeterminadas");
-            Add(l, "misc.autoplay_acc_label", "Precisión humana objetivo: {0:0}% (agrega variación de reacción)");
             Add(l, "hud.autoplay_plus", "Auto+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -892,7 +886,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_plus_toggle", "Включить Автовоспроизведение+ (эмуляция клавиш для KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Разрешенные клавиши (макс. 16, через пробел):");
             Add(l, "misc.autoplay_preset_btn", "Сбросить клавиши по умолчанию");
-            Add(l, "misc.autoplay_acc_label", "Человеческая точность: {0:0}% (добавляет погрешность)");
             Add(l, "hud.autoplay_plus", "Авто+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -998,7 +991,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_plus_toggle", "Autoplay+ aktivieren (Tastensimulation für KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Erlaubte Tasten (max 16, getrennt durch Leerzeichen):");
             Add(l, "misc.autoplay_preset_btn", "Tasten zurücksetzen");
-            Add(l, "misc.autoplay_acc_label", "Menschliche Zielgenauigkeit: {0:0}% (Reaktionsjitter)");
             Add(l, "hud.autoplay_plus", "Autoplay+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -1062,7 +1054,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_plus_toggle", "Activer Autoplay+ (simulation de touches pour KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Touches autorisées (max 16, séparées par un espace):");
             Add(l, "misc.autoplay_preset_btn", "Réinitialiser les touches par défaut");
-            Add(l, "misc.autoplay_acc_label", "Précision humaine ciblée: {0:0}% (ajoute une variance de timing)");
             Add(l, "hud.autoplay_plus", "Autoplay+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -1126,7 +1117,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_plus_toggle", "Ativar Autoplay+ (simulação de teclas para KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Teclas permitidas (máx 16, separadas por espaço):");
             Add(l, "misc.autoplay_preset_btn", "Redefinir teclas padrão");
-            Add(l, "misc.autoplay_acc_label", "Precisão humana alvo: {0:0}% (adiciona variação de reação)");
             Add(l, "hud.autoplay_plus", "Autoplay+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -1190,7 +1180,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_plus_toggle", "Włącz Autoplay+ (symulacja klawiszy dla KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Dozwolone klawisze (maks. 16, oddzielone spacją):");
             Add(l, "misc.autoplay_preset_btn", "Zresetuj klawisze domyślne");
-            Add(l, "misc.autoplay_acc_label", "Docelowa ludzka dokładność: {0:0}% (wariancja reakcji)");
             Add(l, "hud.autoplay_plus", "Autoplay+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -1254,7 +1243,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_plus_toggle", "Bật Tự động chơi+ (mô phỏng phím cho KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Các phím được phép (tối đa 16, cách nhau bằng dấu cách):");
             Add(l, "misc.autoplay_preset_btn", "Đặt lại phím mặc định");
-            Add(l, "misc.autoplay_acc_label", "Độ chính xác mô phỏng: {0:0}% (dao động thời gian thực tế)");
             Add(l, "hud.autoplay_plus", "Tự động+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -1318,7 +1306,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_plus_toggle", "Povolit Automatické přehrávání+ (simulace kláves pro KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Povolené klávesy (max. 16, oddělené mezerou):");
             Add(l, "misc.autoplay_preset_btn", "Obnovit výchozí klávesy");
-            Add(l, "misc.autoplay_acc_label", "Cílová lidská přesnost: {0:0}% (variace odezvy)");
             Add(l, "hud.autoplay_plus", "Auto+");
             
             Add(l, "mod.title", "ADOFAI++");
@@ -1382,7 +1369,6 @@ namespace ADOFAIPlusPlus
             Add(l, "misc.autoplay_plus_toggle", "Activează Redare automată+ (simulare taste pentru KeyViewer)");
             Add(l, "misc.autoplay_keys_label", "Taste permise (max 16, separate prin spațiu):");
             Add(l, "misc.autoplay_preset_btn", "Resetează tastele implicite");
-            Add(l, "misc.autoplay_acc_label", "Precizie umană țintă: {0:0}% (variație de reacție)");
             Add(l, "hud.autoplay_plus", "Auto+");
             
             Add(l, "mod.title", "ADOFAI++");

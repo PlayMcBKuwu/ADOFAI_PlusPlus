@@ -35,6 +35,7 @@ namespace ADOFAIPlusPlus
         private static readonly FieldInfo TxtField = AccessTools.Field(typeof(scrShowIfDebug), "txt");
         private static readonly MethodInfo UpdateDifficultyUIMethod = AccessTools.Method(typeof(scrUIController), "UpdateDifficultyUI");
         private static readonly FieldInfo RDStringFontDataField = AccessTools.Field(typeof(RDString), "<fontData>k__BackingField");
+        private static readonly FieldInfo F_ClsCurrentFolderName = AccessTools.Field(typeof(scnCLS), "currentFolderName");
 
         private static readonly Dictionary<scrFloor, Color> ColoredFloors = new Dictionary<scrFloor, Color>();
 
@@ -2071,11 +2072,17 @@ namespace ADOFAIPlusPlus
 
         /// <summary>
         /// 18. 不死模式与自动播放快捷键及状态常驻（兼容官谱与任何模式；主界面仅保留水印，不修改判定/不锁自动）
+        /// 全场景高灵敏 ESC 响应：自定义关卡菜单退出/返回/关闭面板，关卡内可靠暂停/继续与模拟按键释放
         /// </summary>
         [HarmonyPatch(typeof(scrController), "Update")]
         public static class Patch_ScrController_Update
         {
-            public static void Postfix(scrController __instance)
+            public static void Prefix(scrController __instance, out bool __state)
+            {
+                __state = (__instance != null && __instance.paused);
+            }
+
+            public static void Postfix(scrController __instance, bool __state)
             {
                 if (!Main.Enabled || !Main.Settings.MasterEnabled)
                     return;
@@ -2084,10 +2091,59 @@ namespace ADOFAIPlusPlus
 
                 bool inPlayable = IsInPlayableLevel();
 
-                // 自动播放+运行中按 ESC 释放所有模拟按键，由原版 RDInput.cancelPress 触发 TogglePauseGame
-                if (AutoplayBot.IsActive() && inPlayable && Input.GetKeyDown(KeyCode.Escape))
+                // 全场景高灵敏 ESC 按键处理
+                if (Input.GetKeyDown(KeyCode.Escape))
                 {
-                    AutoplayBot.ReleaseAllKeys();
+                    // 场景 A: 自定义关卡菜单 / 选曲界面 (scnCLS)
+                    if (ADOBase.isCLS || scnCLS.instance != null)
+                    {
+                        scnCLS cls = scnCLS.instance ?? ADOBase.cls;
+                        if (cls != null)
+                        {
+                            if (cls.optionsPanels != null && cls.optionsPanels.showingAnyPanel)
+                            {
+                                cls.optionsPanels.HideAnyPanel();
+                                cls.optionsPanels.justHidPanels = true;
+                            }
+                            else if (cls.importLevelPanel != null && cls.importLevelPanel.gameObject != null && cls.importLevelPanel.gameObject.activeSelf)
+                            {
+                                cls.CloseImportPanel();
+                            }
+                            else if (__instance != null && __instance.paused)
+                            {
+                                __instance.TogglePauseGame();
+                            }
+                            else
+                            {
+                                string curFolder = (F_ClsCurrentFolderName != null) ? F_ClsCurrentFolderName.GetValue(cls) as string : null;
+                                if (!string.IsNullOrEmpty(curFolder))
+                                {
+                                    cls.ExitFolder();
+                                }
+                                else
+                                {
+                                    cls.QuitPortal();
+                                }
+                            }
+                        }
+                    }
+                    // 场景 B: 可游玩关卡 (自定义关卡与官方关卡)
+                    else if (inPlayable && __instance != null)
+                    {
+                        if (AutoplayBot.IsActive())
+                        {
+                            AutoplayBot.ReleaseAllKeys();
+                        }
+
+                        if (!__state && !__instance.paused)
+                        {
+                            __instance.TogglePauseGame();
+                        }
+                        else if (__state && __instance.paused && __instance.pauseMenu != null && __instance.pauseMenu.gameObject.activeSelf)
+                        {
+                            __instance.pauseMenu.BackButtonAction(false);
+                        }
+                    }
                 }
 
                 // 仅在可游玩关卡内记录当前尝试使用的判定模式
@@ -2219,11 +2275,6 @@ namespace ADOFAIPlusPlus
                 if (Main.Settings.Autoplay || Main.Settings.AutoplayPlus)
                 {
                     RDC.auto = true;
-                }
-
-                if (Main.Settings.AutoplayPlus)
-                {
-                    AutoplayBot.ApplyPendingAngleToPlanet(__instance, ref hitTick);
                 }
             }
         }
