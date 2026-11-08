@@ -23,9 +23,17 @@ namespace ADOFAIPlusPlus
         [DllImport("user32.dll", SetLastError = false)]
         private static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+
         private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
         private const uint KEYEVENTF_KEYUP = 0x0002;
         private const uint MAPVK_VK_TO_VSC = 0;
+
+        private const int VK_CONTROL = 0x11;
+        private const int VK_MENU = 0x12; // Alt 键
+        private const int VK_LWIN = 0x5B;
+        private const int VK_RWIN = 0x5C;
 
         /// <summary>
         /// 预设 16 键（严格对应 2x8 视觉布局：上排左4右4，下排左4右4）
@@ -56,6 +64,14 @@ namespace ADOFAIPlusPlus
         private static readonly HashSet<KeyCode> _osPressedKeys = new HashSet<KeyCode>();
         private static readonly List<KeyCode> _tempExpiredKeys = new List<KeyCode>(16);
 
+        private struct PendingKeyPress
+        {
+            public KeyCode Key;
+            public double TriggerTime;
+            public double HoldDuration;
+        }
+        private static readonly List<PendingKeyPress> _pendingPresses = new List<PendingKeyPress>();
+
         // 长条 (Hold) 持续按压状态
         private static KeyCode _activeHoldKey = KeyCode.None;
         private static int _activeHoldSlot = -1;
@@ -71,10 +87,18 @@ namespace ADOFAIPlusPlus
         private static int _dominantHand = 1; // 0 = 左手 (E), 1 = 右手 (P)
         private static int _altHandParity = 0;
         private static int _roll4Cursor = 0;
+        private static int _roll6Cursor = 0;
         private static int _roll8Cursor = 0;
         private static int _roll16Cursor = 0;
         private static int _lastUsedSlot = -1;
         private static int _secondLastUsedSlot = -1;
+
+        // JipperResourcePack Timing 反射更新缓存
+        private static MethodInfo _jipperUpdateTimingMethod = null;
+        private static object _jipperOverlayInstance = null;
+        private static MethodInfo _jOverlayUpdateTimingMethod = null;
+        private static object _jOverlayInstance = null;
+        private static bool _jipperChecked = false;
 
         // 闭环 X-Accuracy 统计与自相关误差发生器
         private static readonly System.Random _rng = new System.Random();
@@ -86,21 +110,27 @@ namespace ADOFAIPlusPlus
         // 缓存所有可绑定的 KeyCode 枚举值
         private static KeyCode[] _allKeyCodes;
 
-        // 手部人体工学槽位拓扑（对应 2x8 16键）
-        // 左手主排（从食指到小指）：3(E), 2(2), 1(1), 0(Tab)
-        // 右手主排（从食指到小指）：4(P), 5(=), 6(Bksp), 7(\)
-        // 左手副排（从内侧拇指到小指）：11(Space), 10(C), 9(LShift), 8(A)
-        // 右手副排（从内侧食指到小指）：12(,), 13(.), 14(Enter), 15(H)
-        private static readonly int[] _leftAllSlots = new int[] { 3, 2, 1, 0, 11, 10, 9, 8 };
-        private static readonly int[] _rightAllSlots = new int[] { 4, 5, 6, 7, 12, 13, 14, 15 };
+        // 手部人体工学槽位拓扑（严格对应 2x8 16键：Row 1 为 Tab 1 2 E P = Backspace \）
+        // 第一排核心指法：左手食指(3:E), 左手中指(2:2), 右手食指(4:P), 右手中指(5:=)
+        // 第一排扩展指法：左手无名指(1:1), 右手无名指(6:Bksp), 左手小指(0:Tab), 右手小指(7:\)
+        private static readonly int[] _row1LeftErgonomic = new int[] { 3, 2, 4, 5, 1, 6, 0, 7 };
+        private static readonly int[] _row1RightErgonomic = new int[] { 4, 5, 3, 2, 6, 1, 7, 0 };
+        private static readonly int[] _allLeftSlots = new int[] { 3, 2, 4, 5, 1, 6, 0, 7, 11, 10, 9, 8, 12, 13, 14, 15 };
+        private static readonly int[] _allRightSlots = new int[] { 4, 5, 3, 2, 6, 1, 7, 0, 12, 13, 14, 15, 11, 10, 9, 8 };
 
-        // 4指内旋轮指序列（左中->左食->右中->右食）
-        private static readonly int[] _roll4Sequence = new int[] { 2, 3, 5, 4 };
+        // 略快 3~4 键轮指（遵循偏好设定，严格限制在第一排核心四键 2, E, P, =）
+        private static readonly int[] _roll4LeftSeq = new int[] { 2, 3, 5, 4 };   // 2 -> E -> = -> P
+        private static readonly int[] _roll4RightSeq = new int[] { 5, 4, 2, 3 };  // = -> P -> 2 -> E
 
-        // 8指顺滑内旋流（左手外侧向内滑 Tab->1->2->E，右手外侧向内滑 \->Bksp->=->P）
-        private static readonly int[] _roll8Sequence = new int[] { 0, 1, 2, 3, 7, 6, 5, 4 };
+        // 高速 5~6 键轮指（引入无名指 1 与 Backspace，仍绝不碰小指 Tab/\）
+        private static readonly int[] _roll6LeftSeq = new int[] { 1, 2, 3, 6, 5, 4 };  // 1 -> 2 -> E -> Bksp -> = -> P
+        private static readonly int[] _roll6RightSeq = new int[] { 6, 5, 4, 1, 2, 3 }; // Bksp -> = -> P -> 1 -> 2 -> E
 
-        // 16键超高速全指内旋波浪流
+        // 极速 8 键轮指（包含完整第一排）
+        private static readonly int[] _roll8LeftSeq = new int[] { 0, 1, 2, 3, 7, 6, 5, 4 };
+        private static readonly int[] _roll8RightSeq = new int[] { 7, 6, 5, 4, 0, 1, 2, 3 };
+
+        // 超极限全指波浪流（> 40 KPS 极限情况才进入第二排）
         private static readonly int[] _roll16Sequence = new int[]
         {
             0, 1, 2, 3, 7, 6, 5, 4,
@@ -160,8 +190,78 @@ namespace ADOFAIPlusPlus
             return false;
         }
 
+        private static bool IsModManagerOpen()
+        {
+            try
+            {
+                return UnityModManagerNet.UnityModManager.UI.Instance != null && UnityModManagerNet.UnityModManager.UI.Instance.Opened;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsSystemModifierHeld()
+        {
+            try
+            {
+                return (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
+                       (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0 ||
+                       (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 ||
+                       (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static void NotifyJipperTiming(float timingMs)
+        {
+            try
+            {
+                if (!_jipperChecked)
+                {
+                    _jipperChecked = true;
+                    Assembly[] asms = AppDomain.CurrentDomain.GetAssemblies();
+                    for (int i = 0; i < asms.Length; i++)
+                    {
+                        if (asms[i].GetName().Name == "JipperResourcePack")
+                        {
+                            Type tOverlay = asms[i].GetType("JipperResourcePack.OverlayContents.Overlay");
+                            if (tOverlay != null)
+                            {
+                                FieldInfo fInst = tOverlay.GetField("Instance", BindingFlags.Public | BindingFlags.Static);
+                                if (fInst != null) _jipperOverlayInstance = fInst.GetValue(null);
+                                _jipperUpdateTimingMethod = tOverlay.GetMethod("UpdateTiming", BindingFlags.Public | BindingFlags.Instance, null, new Type[] { typeof(float), typeof(int) }, null);
+                            }
+                            Type tJOverlay = asms[i].GetType("JipperResourcePack.Jongyeol.JOverlay");
+                            if (tJOverlay != null)
+                            {
+                                FieldInfo fJInst = tJOverlay.GetField("Instance", BindingFlags.Public | BindingFlags.Static);
+                                if (fJInst != null) _jOverlayInstance = fJInst.GetValue(null);
+                                _jOverlayUpdateTimingMethod = tJOverlay.GetMethod("UpdateTiming", BindingFlags.Public | BindingFlags.Instance, null, new Type[] { typeof(float), typeof(int) }, null);
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                if (_jipperOverlayInstance != null && _jipperUpdateTimingMethod != null)
+                {
+                    _jipperUpdateTimingMethod.Invoke(_jipperOverlayInstance, new object[] { timingMs, 0 });
+                }
+                if (_jOverlayInstance != null && _jOverlayUpdateTimingMethod != null)
+                {
+                    _jOverlayUpdateTimingMethod.Invoke(_jOverlayInstance, new object[] { timingMs, 0 });
+                }
+            }
+            catch {}
+        }
         public static void Reset()
         {
+            _pendingPresses.Clear();
             ReleaseAllKeys();
             _hasPendingAngle = false;
             _pendingCandidateAngle = 0.0;
@@ -181,6 +281,7 @@ namespace ADOFAIPlusPlus
 
         public static void ReleaseAllKeys()
         {
+            _pendingPresses.Clear();
             if (_osPressedKeys.Count > 0)
             {
                 List<KeyCode> toRelease = new List<KeyCode>(_osPressedKeys);
@@ -212,17 +313,18 @@ namespace ADOFAIPlusPlus
         {
             if (!IsActive())
             {
-                if (_heldKeys.Count > 0 || _osPressedKeys.Count > 0)
+                if (_heldKeys.Count > 0 || _osPressedKeys.Count > 0 || _pendingPresses.Count > 0)
                 {
                     ReleaseAllKeys();
                 }
                 return;
             }
 
-            // 窗口失去焦点或不在正式关卡 PlayerControl 状态时立即释放所有模拟按键，防止污染主菜单或外部系统输入
-            if (!Application.isFocused || !IsPlayingInLevel())
+            // 核心防线：窗口失去焦点、打开 Mod 管理器 (UMM) 菜单、按住 Win/Alt/Ctrl 快捷键、游戏暂停或未在正式关卡演奏时，
+            // 立即释放所有模拟按键并清空队列，彻底阻断 Win+E 组合键触发与 UMM 搜索框文本污染！
+            if (!Application.isFocused || !IsPlayingInLevel() || IsModManagerOpen() || IsSystemModifierHeld())
             {
-                if (_heldKeys.Count > 0 || _osPressedKeys.Count > 0)
+                if (_heldKeys.Count > 0 || _osPressedKeys.Count > 0 || _pendingPresses.Count > 0)
                 {
                     ReleaseAllKeys();
                 }
@@ -230,6 +332,27 @@ namespace ADOFAIPlusPlus
             }
 
             double now = Time.unscaledTime;
+
+            // 处理双押与拟人非对称时间差按键触发队列
+            if (_pendingPresses.Count > 0)
+            {
+                for (int i = _pendingPresses.Count - 1; i >= 0; i--)
+                {
+                    PendingKeyPress pk = _pendingPresses[i];
+                    if (now >= pk.TriggerTime)
+                    {
+                        _pendingPresses.RemoveAt(i);
+                        if (pk.Key != KeyCode.None)
+                        {
+                            if (_heldKeys.Contains(pk.Key)) ReleaseKeyImmediate(pk.Key);
+                            _heldKeys.Add(pk.Key);
+                            _downFrames[pk.Key] = Time.frameCount;
+                            _releaseDeadlines[pk.Key] = now + pk.HoldDuration;
+                            SendOsKeyDown(pk.Key);
+                        }
+                    }
+                }
+            }
 
             // 检查长条是否已经结束（例如已离开该砖块）
             if (_activeHoldKey != KeyCode.None && _activeHoldFloor != null)
@@ -356,24 +479,35 @@ namespace ADOFAIPlusPlus
 
                     if (canDoDoubleTap)
                     {
-                        // 执行双押：双手主食指 (左手 Slot 3 + 右手 Slot 4) 同时触发！
+                        // 执行拟人双押：双手主食指 (左手 Slot 3:E + 右手 Slot 4:P)
                         int slotLeft = 3;
                         int slotRight = 4;
                         KeyCode keyLeft = GetSlotKey(slotLeft);
                         KeyCode keyRight = GetSlotKey(slotRight);
-                        double holdDur = ComputeHumanKeyHoldDuration(effectiveDt);
+                        double baseHold = ComputeHumanKeyHoldDuration(effectiveDt);
 
-                        if (keyLeft != KeyCode.None) TriggerTapKey(keyLeft, now, holdDur);
-                        if (keyRight != KeyCode.None) TriggerTapKey(keyRight, now, holdDur);
+                        // 人类双手双押具有 1.2ms ~ 3.5ms 的生理非对称时间差（绝不可能在微秒级完全同拍）
+                        int dominant = (Main.Settings != null && Main.Settings.PreferRightHand) ? 1 : 0;
+                        double handDiffSec = 0.0012 + (_rng.NextDouble() * 0.0023);
+                        double leftDelay = (dominant == 0) ? 0.0 : handDiffSec;
+                        double rightDelay = (dominant == 1) ? 0.0 : handDiffSec;
 
-                        _lastUsedSlot = slotRight;
-                        _secondLastUsedSlot = slotLeft;
+                        // 双手点按时长也施加非对称微幅波动
+                        double leftHold = Math.Max(0.018, baseHold * (0.93 + _rng.NextDouble() * 0.14));
+                        double rightHold = Math.Max(0.018, baseHold * (0.93 + _rng.NextDouble() * 0.14));
+
+                        if (keyLeft != KeyCode.None) TriggerTapKey(keyLeft, now + leftDelay, leftHold);
+                        if (keyRight != KeyCode.None) TriggerTapKey(keyRight, now + rightDelay, rightHold);
+
+                        _lastUsedSlot = (dominant == 1) ? slotRight : slotLeft;
+                        _secondLastUsedSlot = (dominant == 1) ? slotLeft : slotRight;
                         _skipTapFloor = nextFloor.nextfloor;
                         _lastHitTime = now;
                     }
                     else
                     {
-                        int chosenSlot = SelectHumanSlot(dtPrev, effectiveDt);
+                        bool isMidSpin = (currFloor != null && currFloor.midSpin) || (nextFloor != null && nextFloor.midSpin);
+                        int chosenSlot = SelectHumanSlot(dtPrev, effectiveDt, isMidSpin);
                         KeyCode chosenKey = GetSlotKey(chosenSlot);
 
                         if (chosenKey != KeyCode.None)
@@ -403,6 +537,7 @@ namespace ADOFAIPlusPlus
 
             if ((currFloor != null && currFloor.midSpin) || (nextFloor != null && nextFloor.midSpin))
             {
+                NotifyJipperTiming(0f);
                 return;
             }
 
@@ -553,6 +688,13 @@ namespace ADOFAIPlusPlus
                     verifiedMargin = HitMargin.XPerfect;
                 }
 
+                // 同步驱动 JipperResourcePack 的 Timing 显示与刻度尺
+                double timeDiffSec = (pitch > 0 && bpmTimesSpeed > 0)
+                    ? (scrMisc.AngleToTime(signedRadDiff, bpmTimesSpeed) / pitch)
+                    : (signedRadDiff / (2.0 * Math.PI));
+                float timingMs = (float)(timeDiffSec * 1000.0);
+                NotifyJipperTiming(timingMs);
+
                 if (HitMarginHelper.IsCounted(verifiedMargin, GCS.hitMarginLimit))
                 {
                     _hasPendingAngle = true;
@@ -610,12 +752,14 @@ namespace ADOFAIPlusPlus
 
         private static double ComputeHumanKeyHoldDuration(double effectiveDt)
         {
-            double baseHold = effectiveDt * 0.42;
-            if (baseHold < 0.020) baseHold = 0.020;
-            if (baseHold > 0.068) baseHold = 0.068;
+            // 人类点按时长基础区间为 22ms ~ 65ms，伴随生理手部微小抖动
+            double baseHold = effectiveDt * 0.40;
+            if (baseHold < 0.022) baseHold = 0.022;
+            if (baseHold > 0.065) baseHold = 0.065;
 
-            double jitter = (_rng.NextDouble() - 0.5) * 0.008;
-            return Math.Max(0.016, baseHold + jitter);
+            // 注入非对称生理离散波动（±6ms）
+            double jitter = (_rng.NextDouble() - 0.5) * 0.012;
+            return Math.Max(0.018, baseHold + jitter);
         }
 
         /// <summary>
@@ -627,7 +771,7 @@ namespace ADOFAIPlusPlus
         /// 4. 极速爆发段（24.0 ~ 36.0 KPS）：八指顺滑内旋流
         /// 5. 超极限段（> 36.0 KPS）：16键全指内旋波浪流
         /// </summary>
-        private static int SelectHumanSlot(double dtPrev, double effectiveDt)
+        private static int SelectHumanSlot(double dtPrev, double effectiveDt, bool isMidSpin)
         {
             double kps = 1.0 / Math.Max(0.004, effectiveDt);
             int dominant = (Main.Settings != null && Main.Settings.PreferRightHand) ? 1 : 0;
@@ -637,6 +781,7 @@ namespace ADOFAIPlusPlus
             if (dtPrev > 1.20)
             {
                 _roll4Cursor = 0;
+                _roll6Cursor = 0;
                 _roll8Cursor = 0;
                 _roll16Cursor = 0;
                 _altHandParity = _dominantHand;
@@ -644,83 +789,116 @@ namespace ADOFAIPlusPlus
 
             int preferredSlot;
 
-            if (kps <= 6.8)
+            // 特殊人体工学处理：中旋 (MidSpin) —— 人类绝对只会用主食指或双食指极速轻点，绝不向外伸手碰 Tab/\ 或第二排
+            if (isMidSpin)
             {
-                // 档位 1：慢速至中低速单点节拍（<= 6.8 KPS，人类正常单指平点极限约 400+ BPM 直线）
-                // 纯单指单点：始终固定使用惯用手食指（默认右手食指 P 或左手食指 E），绝不在平点段切换中指或莫名换手
+                int hand = _altHandParity;
+                _altHandParity = 1 - _altHandParity;
+                preferredSlot = (hand == 1) ? 4 : 3;
+                if (preferredSlot == _lastUsedSlot)
+                {
+                    preferredSlot = (preferredSlot == 3) ? 4 : 3;
+                }
+
+                int midSpinSlot = ResolveAvailableSlot(preferredSlot, true, true);
+                _secondLastUsedSlot = _lastUsedSlot;
+                _lastUsedSlot = midSpinSlot;
+                return midSpinSlot;
+            }
+
+            if (kps <= 7.0)
+            {
+                // 档位 1：慢速至中低速单点节拍（<= 7.0 KPS，人类正常单指平点区间）
+                // 纯单指单点：始终固定使用惯用手食指（默认右手食指 P:4 或左手食指 E:3），绝不在平点段切换中指或莫名换手
                 preferredSlot = (dominant == 1) ? 4 : 3;
             }
-            else if (kps <= 13.5)
+            else if (kps <= 14.0)
             {
-                // 档位 2：中高速双手交替（6.8 ~ 13.5 KPS）—— 经典左右手食指单双交替（E <-> P）
+                // 档位 2：中速双手交替（7.0 ~ 14.0 KPS）—— 经典左右手食指单双交替（E:3 <-> P:4）
                 int hand = _altHandParity;
                 _altHandParity = 1 - _altHandParity;
                 preferredSlot = (hand == 1) ? 4 : 3;
 
-                // 防止因任何原因连续重复同一个槽位
                 if (preferredSlot == _lastUsedSlot)
                 {
                     preferredSlot = (preferredSlot == 3) ? 4 : 3;
                 }
             }
-            else if (kps <= 24.0)
+            else if (kps <= 22.0)
             {
-                // 档位 3：快速四指轮指（13.5 ~ 24.0 KPS）—— 左中(2)->左食(E)->右中(=)->右食(P)
-                preferredSlot = _roll4Sequence[_roll4Cursor % _roll4Sequence.Length];
-                _roll4Cursor = (_roll4Cursor + 1) % _roll4Sequence.Length;
-                _altHandParity = (_roll4Cursor < 2) ? 1 : 0;
+                // 档位 3：略快三~四键（14.0 ~ 22.0 KPS）—— 遵循左/右撇子设定，仅在第一排核心四键 (2, E, P, =) 之间内旋交替！
+                // 绝不碰无名指 (1/Bksp)，更绝不碰小指 (Tab/\)！
+                if (dominant == 0)
+                {
+                    preferredSlot = _roll4LeftSeq[_roll4Cursor % _roll4LeftSeq.Length];
+                    _roll4Cursor = (_roll4Cursor + 1) % _roll4LeftSeq.Length;
+                }
+                else
+                {
+                    preferredSlot = _roll4RightSeq[_roll4Cursor % _roll4RightSeq.Length];
+                    _roll4Cursor = (_roll4Cursor + 1) % _roll4RightSeq.Length;
+                }
             }
-            else if (kps <= 36.0)
+            else if (kps <= 30.0)
             {
-                // 档位 4：高速八指内旋流（24.0 ~ 36.0 KPS）—— 左手 Tab->1->2->E，右手 \->Bksp->=->P
-                preferredSlot = _roll8Sequence[_roll8Cursor % _roll8Sequence.Length];
-                _roll8Cursor = (_roll8Cursor + 1) % _roll8Sequence.Length;
+                // 档位 4：高速五~六键（22.0 ~ 30.0 KPS）—— 引入无名指 (1 与 Backspace)
+                // 左手 1, 2, E 与 右手 Backspace, =, P 内旋交替，仍绝不碰小指 (Tab/\)
+                if (dominant == 0)
+                {
+                    preferredSlot = _roll6LeftSeq[_roll6Cursor % _roll6LeftSeq.Length];
+                    _roll6Cursor = (_roll6Cursor + 1) % _roll6LeftSeq.Length;
+                }
+                else
+                {
+                    preferredSlot = _roll6RightSeq[_roll6Cursor % _roll6RightSeq.Length];
+                    _roll6Cursor = (_roll6Cursor + 1) % _roll6RightSeq.Length;
+                }
+            }
+            else if (kps <= 40.0)
+            {
+                // 档位 5：极速八键内旋（30.0 ~ 40.0 KPS）—— 第一排完整 8 键 (Tab, 1, 2, E, \, Bksp, =, P)
+                preferredSlot = (dominant == 0)
+                    ? _roll8LeftSeq[_roll8Cursor % _roll8LeftSeq.Length]
+                    : _roll8RightSeq[_roll8Cursor % _roll8RightSeq.Length];
+                _roll8Cursor = (_roll8Cursor + 1) % _roll8LeftSeq.Length;
             }
             else
             {
-                // 档位 5：超高速全指爆发（> 36.0 KPS）—— 16键双排顺滑内旋波浪
+                // 档位 6：超极限多于 8 键爆发（> 40.0 KPS 极限情况）—— 才开始启用第二排按键
                 preferredSlot = _roll16Sequence[_roll16Cursor % _roll16Sequence.Length];
                 _roll16Cursor = (_roll16Cursor + 1) % _roll16Sequence.Length;
             }
 
-            // 当 kps <= 6.8 时为纯单指单点，允许并必须重复使用同一按键（avoidImmediateRepeat = false）
-            // 当 kps > 6.8 时为多指/双手交互，不能连续按同一键
-            int resolvedSlot = ResolveAvailableSlot(preferredSlot, kps > 6.8);
+            int resolvedSlot = ResolveAvailableSlot(preferredSlot, kps > 7.0, kps <= 30.0);
             _secondLastUsedSlot = _lastUsedSlot;
             _lastUsedSlot = resolvedSlot;
             return resolvedSlot;
         }
 
-        private static int ResolveAvailableSlot(int preferredSlot, bool avoidImmediateRepeat)
+        private static int ResolveAvailableSlot(int preferredSlot, bool avoidImmediateRepeat, bool restrictToRow1)
         {
             if (IsSlotUsable(preferredSlot, avoidImmediateRepeat))
             {
                 return preferredSlot;
             }
 
-            bool isLeftHand = (preferredSlot >= 0 && preferredSlot <= 3) || (preferredSlot >= 8 && preferredSlot <= 11);
-            int[] sameHandPool = isLeftHand ? _leftAllSlots : _rightAllSlots;
-            int[] otherHandPool = isLeftHand ? _rightAllSlots : _leftAllSlots;
+            int dominant = (Main.Settings != null && Main.Settings.PreferRightHand) ? 1 : 0;
+            int[] ergonomicPool = (dominant == 1)
+                ? (restrictToRow1 ? _row1RightErgonomic : _allRightSlots)
+                : (restrictToRow1 ? _row1LeftErgonomic : _allLeftSlots);
 
-            for (int i = 0; i < sameHandPool.Length; i++)
+            for (int i = 0; i < ergonomicPool.Length; i++)
             {
-                int candidate = sameHandPool[i];
+                int candidate = ergonomicPool[i];
                 if (IsSlotUsable(candidate, avoidImmediateRepeat))
                 {
                     return candidate;
                 }
             }
 
-            for (int i = 0; i < otherHandPool.Length; i++)
-            {
-                int candidate = otherHandPool[i];
-                if (IsSlotUsable(candidate, avoidImmediateRepeat))
-                {
-                    return candidate;
-                }
-            }
-
-            for (int i = 0; i < 16; i++)
+            // 次级容错搜索
+            int maxSlots = restrictToRow1 ? 8 : 16;
+            for (int i = 0; i < maxSlots; i++)
             {
                 if (IsSlotUsable(i, false))
                 {
@@ -754,19 +932,31 @@ namespace ADOFAIPlusPlus
             return Main.Settings.AutoplayKeyBindings[slot];
         }
 
-        private static void TriggerTapKey(KeyCode key, double now, double holdDuration)
+        private static void TriggerTapKey(KeyCode key, double triggerTime, double holdDuration)
         {
             if (key == KeyCode.None) return;
 
-            if (_heldKeys.Contains(key))
+            double now = Time.unscaledTime;
+            if (triggerTime <= now)
             {
-                ReleaseKeyImmediate(key);
-            }
+                if (_heldKeys.Contains(key))
+                {
+                    ReleaseKeyImmediate(key);
+                }
 
-            _heldKeys.Add(key);
-            _downFrames[key] = Time.frameCount;
-            _releaseDeadlines[key] = now + holdDuration;
-            SendOsKeyDown(key);
+                _heldKeys.Add(key);
+                _downFrames[key] = Time.frameCount;
+                _releaseDeadlines[key] = now + holdDuration;
+                SendOsKeyDown(key);
+            }
+            else
+            {
+                PendingKeyPress pk;
+                pk.Key = key;
+                pk.TriggerTime = triggerTime;
+                pk.HoldDuration = holdDuration;
+                _pendingPresses.Add(pk);
+            }
         }
 
         private static void StartHoldKey(KeyCode key, int slot, scrFloor holdFloor)
@@ -817,7 +1007,8 @@ namespace ADOFAIPlusPlus
 
         private static void SendOsKeyDown(KeyCode key)
         {
-            if (!Application.isFocused) return;
+            // 防线：失焦、Mod管理器开启或用户正在按住 Win/Alt/Ctrl 快捷键时严禁注入按键
+            if (!Application.isFocused || IsModManagerOpen() || IsSystemModifierHeld()) return;
 
             byte vk = KeyCodeToVirtualKey(key);
             if (vk == 0) return;
