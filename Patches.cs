@@ -2674,10 +2674,10 @@ namespace ADOFAIPlusPlus
                 PauseButton openBtn = F_OpenInEditorButton.GetValue(__instance) as PauseButton;
                 if (openBtn == null) return;
 
-                PauseButton[] buttons = F_PauseButtons.GetValue(__instance) as PauseButton[];
+                GeneralPauseButton[] buttons = F_PauseButtons.GetValue(__instance) as GeneralPauseButton[];
                 if (buttons == null) return;
 
-                List<PauseButton> list = new List<PauseButton>(buttons);
+                List<GeneralPauseButton> list = new List<GeneralPauseButton>(buttons);
                 if (!list.Contains(openBtn))
                 {
                     int idx = Math.Max(0, list.Count - 1);
@@ -2690,15 +2690,46 @@ namespace ADOFAIPlusPlus
                         RectTransform container = F_ButtonsContainer.GetValue(__instance) as RectTransform;
                         if (chain != null && container != null)
                         {
+                            float width = (list.Count - 1) * 58f + 52f;
+                            container.sizeDelta = new Vector2(width, container.sizeDelta.y);
+                            chain.UpdateLinks();
                             chain.UpdateHeight(container);
                         }
+                    }
+                }
+
+                if (F_CurrentButtons != null)
+                {
+                    List<GeneralPauseButton> curList = F_CurrentButtons.GetValue(__instance) as List<GeneralPauseButton>;
+                    if (curList != null && !curList.Contains(openBtn))
+                    {
+                        int idx = Math.Max(0, curList.Count - 1);
+                        curList.Insert(idx, openBtn);
                     }
                 }
             }
         }
 
+        [HarmonyPatch(typeof(PauseMenu), "ShowMainMenu")]
+        public static class Patch_PauseMenu_ShowMainMenu
+        {
+            public static void Postfix(PauseMenu __instance)
+            {
+                if (!Main.Enabled || Main.Settings == null || !Main.Settings.MasterEnabled || !Main.Settings.AlwaysAllowEditor)
+                    return;
+                if (__instance == null || F_OpenInEditorButton == null)
+                    return;
+
+                PauseButton openBtn = F_OpenInEditorButton.GetValue(__instance) as PauseButton;
+                if (openBtn != null && openBtn.gameObject != null)
+                {
+                    openBtn.gameObject.SetActive(true);
+                }
+            }
+        }
+
         /// <summary>
-        /// 始终允许关卡编辑器：点击「在关卡编辑器中打开」时，若为官谱则导出为干净自定义谱面并唤起编辑器
+        /// 始终允许关卡编辑器：点击「在关卡编辑器中打开」时，若为官谱/DLC/内置谱则导出为干净自定义谱面并唤起编辑器
         /// </summary>
         [HarmonyPatch(typeof(PauseMenu), "Choose")]
         public static class Patch_PauseMenu_Choose
@@ -2720,7 +2751,7 @@ namespace ADOFAIPlusPlus
                 PauseButton pb = buttons[selectedIndex] as PauseButton;
                 if (pb != null && pb.buttonType == PauseMenu.ButtonType.LevelEditor)
                 {
-                    if (ADOBase.isOfficialLevel || ADOBase.isInternalLevel)
+                    if (!ADOBase.customLevel || ADOBase.isOfficialLevel || ADOBase.isInternalLevel || ADOBase.isDLCLevel)
                     {
                         ExportOfficialLevelAndOpenInEditor(__instance);
                         return false;

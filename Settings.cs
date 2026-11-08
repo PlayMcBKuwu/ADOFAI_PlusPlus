@@ -194,7 +194,7 @@ namespace ADOFAIPlusPlus
         /// <summary>
         /// 杂项：始终允许关卡编辑器（官谱亦可在关卡编辑器中打开）
         /// </summary>
-        public bool AlwaysAllowEditor = false;
+        public bool AlwaysAllowEditor = true;
 
         /// <summary>
         /// 杂项：自动播放+（独立开关，内部零延迟判定 + 双通道拟人按键驱动 KV）
