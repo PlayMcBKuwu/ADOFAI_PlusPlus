@@ -2268,6 +2268,11 @@ namespace ADOFAIPlusPlus
                 {
                     RDC.auto = true;
                 }
+
+                if (Main.Settings.AutoplayPlus)
+                {
+                    AutoplayBot.ApplyPendingAngleToPlanet(__instance, ref hitTick);
+                }
             }
         }
 

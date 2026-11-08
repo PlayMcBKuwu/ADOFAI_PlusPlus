@@ -78,6 +78,14 @@ namespace ADOFAIPlusPlus
         private static scrFloor _activeHoldFloor = null;
         private static scrFloor _skipTapFloor = null;
 
+        // 待在 scrPlanet.SwitchChosen Prefix 中应用的拟人缓存角度（弧度 rad）与角度篡改逻辑
+        private static bool _hasPendingAngle = false;
+        private static double _pendingCandidateAngle = 0.0;
+
+        // 一阶自相关漂移偏差与最后一次早晚符号发生器
+        private static double _correlatedBias = 0.0;
+        private static bool _lastEarlyLateSign = false;
+
         // 拟人排键状态机
         private static double _lastHitTime = -10.0;
         private static int _dominantHand = 1; // 0 = 左手 (E), 1 = 右手 (P)
@@ -317,6 +325,8 @@ namespace ADOFAIPlusPlus
         {
             _pendingPresses.Clear();
             ReleaseAllKeys();
+            _hasPendingAngle = false;
+            _pendingCandidateAngle = 0.0;
             _lastHitTime = -10.0;
             _dominantHand = (Main.Settings != null && Main.Settings.PreferRightHand) ? 1 : 0;
             _altHandParity = _dominantHand;
@@ -328,10 +338,13 @@ namespace ADOFAIPlusPlus
             _lastUsedSlot = -1;
             _secondLastUsedSlot = -1;
             _smoothedKps = 4.0;
+            _correlatedBias = 0.0;
+            _lastEarlyLateSign = false;
         }
 
         public static void ReleaseAllKeys()
         {
+            _hasPendingAngle = false;
             _pendingPresses.Clear();
             if (_osPressedKeys.Count > 0)
             {
@@ -582,13 +595,155 @@ namespace ADOFAIPlusPlus
                 }
             }
 
-            // 2. 同步驱动 JipperResourcePack 的 Timing 显示为 0 误差纯 X 完美
-            NotifyJipperTiming(0f);
+            // 2. 高斯抖动偏移、自相关漂移偏差与角度篡改逻辑（确保 100% 锁定在 X-完美 窗口内，误击量计与 Jipper Timing 自然活化微抖动）
+            if (isAutoTile || isHoldReleaseOnly)
+            {
+                NotifyJipperTiming(0f);
+                return;
+            }
+
+            if ((currFloor != null && currFloor.midSpin) || (nextFloor != null && nextFloor.midSpin))
+            {
+                NotifyJipperTiming(0f);
+                return;
+            }
+
+            ApplyHumanizedAccuracyOffset(planet, currFloor, nextFloor, ref hitTick, out tempUseOldAuto);
         }
 
+        /// <summary>
+        /// 在 scrPlanet.SwitchChosen(long? hitTick) Prefix 中调用：
+        /// 注入拟人高斯抖动角度，同时生效于 SwitchChosen 行星旋转与 UpdateHitErrorMeter 误击量计绘制
+        /// </summary>
         public static void ApplyPendingAngleToPlanet(scrPlanet planet, ref long? hitTick)
         {
-            // 精准度控制器已移除，命中以 100% 纯正原生角度结算
+            if (_hasPendingAngle && planet != null && IsActive())
+            {
+                planet.cachedAngle = _pendingCandidateAngle;
+                hitTick = null;
+                _hasPendingAngle = false;
+            }
+        }
+
+        private static void ApplyHumanizedAccuracyOffset(
+            scrPlanet planet,
+            scrFloor currFloor,
+            scrFloor nextFloor,
+            ref long? hitTick,
+            out bool tempUseOldAuto)
+        {
+            tempUseOldAuto = false;
+
+            try
+            {
+                double pitch = 1.0;
+                double baseBpm = 100.0;
+                double speed = 1.0;
+
+                if (planet.conductor != null)
+                {
+                    baseBpm = planet.conductor.bpm;
+                    if (planet.conductor.song != null && planet.conductor.song.pitch > 0f)
+                    {
+                        pitch = (double)planet.conductor.song.pitch;
+                    }
+                }
+                if (planet.planetarySystem != null && planet.planetarySystem.speed > 0.0)
+                {
+                    speed = planet.planetarySystem.speed;
+                }
+
+                float bpmTimesSpeed = (float)(baseBpm * speed);
+                if (bpmTimesSpeed <= 0f) bpmTimesSpeed = 100f;
+
+                double marginScale = 1.0;
+                if (currFloor != null && currFloor.marginScale > 0.0)
+                {
+                    marginScale = currFloor.marginScale;
+                }
+
+                Difficulty diff = GCS.difficulty;
+                scrMisc.HitMarginGeneralWithXPerfectValues<double> bounds =
+                    scrMisc.GetAdjustedAngleBoundaryInDeg(diff, (double)bpmTimesSpeed, pitch, marginScale);
+
+                // 官方底层真正的纯正 X-Perfect 判定严格边界为 bounds.XPerfect
+                double xBound = (bounds.XPerfect > 0.0) ? bounds.XPerfect : (bounds.Pure * 0.35);
+                if (xBound <= 0.0001)
+                {
+                    NotifyJipperTiming(0f);
+                    return;
+                }
+
+                // 1. Box-Muller 高斯随机变量生成 (标准正态分布 N(0, 1))
+                double u1 = Math.Max(1e-7, _rng.NextDouble());
+                double u2 = _rng.NextDouble();
+                double stdNormal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
+
+                // 2. 一阶自相关漂移 (AR(1) 自回归模型，alpha = 0.65，模拟人类生理微节拍惯性与趋势漂移)
+                _correlatedBias = 0.65 * _correlatedBias + 0.35 * stdNormal;
+
+                // 3. 高斯抖动与自相关偏差合成（绝对约束在 X-Perfect 判定窗内部，坚决不触碰 -完美 与 完美+ 边界）
+                // 标准差取 xBound 的 25%，最大绝对偏移严格截断在 xBound * 0.70，留出 30% 的绝对安全边际
+                double sigma = xBound * 0.25;
+                double jitter = (_correlatedBias * 0.60 + stdNormal * 0.40) * sigma;
+                double absDegOffset = Math.Min(xBound * 0.70, Math.Abs(jitter));
+
+                // 偏早 (Early) / 偏晚 (Late) 方向决定：跟随自相关趋势与微随机游走
+                bool isLate;
+                if (Math.Abs(_correlatedBias) > 0.15)
+                {
+                    isLate = (_correlatedBias > 0.0);
+                }
+                else
+                {
+                    isLate = (_rng.NextDouble() < 0.70) ? _lastEarlyLateSign : !_lastEarlyLateSign;
+                }
+                _lastEarlyLateSign = isLate;
+
+                double absRadOffset = absDegOffset * (Math.PI / 180.0);
+                bool isCW = (planet.planetarySystem != null) ? planet.planetarySystem.isCW : (currFloor == null || !currFloor.isCCW);
+                double signedRadDiff = isLate ? absRadOffset : -absRadOffset;
+                double candidateAngle = planet.targetExitAngle + (isCW ? signedRadDiff : -signedRadDiff);
+
+                // 4. 底层硬核校验：调用游戏引擎原生 GetHitMarginInDeg
+                // 100% 确保判定严格为纯正 XPerfect，绝无任何掉至 -完美 (EarlyPerfect) 或 完美+ (LatePerfect) 的可能
+                HitMargin verifiedMargin = scrMisc.GetHitMarginInDeg(
+                    diff,
+                    (float)candidateAngle,
+                    (float)planet.targetExitAngle,
+                    isCW,
+                    bpmTimesSpeed,
+                    (float)pitch,
+                    marginScale);
+
+                if (verifiedMargin != HitMargin.XPerfect)
+                {
+                    // 若有任何微小浮点误差超出 XPerfect 边界，立即将偏移收敛至 0（完全居中）
+                    candidateAngle = planet.targetExitAngle;
+                    signedRadDiff = 0.0;
+                }
+
+                // 5. 同步驱动 JipperResourcePack 的 Timing 显示（毫秒 ms 与自然微抖动一致）
+                double timeDiffSec = (pitch > 0 && bpmTimesSpeed > 0)
+                    ? (scrMisc.AngleToTime(signedRadDiff, (double)bpmTimesSpeed) / pitch)
+                    : (signedRadDiff / (2.0 * Math.PI));
+                float timingMs = (float)(timeDiffSec * 1000.0);
+                NotifyJipperTiming(timingMs);
+
+                // 6. 角度篡改逻辑注入：
+                // 缓存待注入角度，写入 planet.cachedAngle，并开启 tempUseOldAuto 让 UpdateHitErrorMeter 接收自然抖动
+                _hasPendingAngle = true;
+                _pendingCandidateAngle = candidateAngle;
+                planet.cachedAngle = candidateAngle;
+                hitTick = null;
+                tempUseOldAuto = true;
+            }
+            catch
+            {
+                _hasPendingAngle = false;
+                tempUseOldAuto = false;
+                NotifyJipperTiming(0f);
+            }
         }
 
         private static double GetLookaheadIntervalSec(scrFloor nextFloor, scrPlanet planet)
