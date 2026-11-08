@@ -90,11 +90,14 @@ namespace ADOFAIPlusPlus
         private static int _secondLastUsedSlot = -1;
 
         // JipperResourcePack Timing 反射更新缓存
-        private static MethodInfo _jipperUpdateTimingMethod = null;
-        private static object _jipperOverlayInstance = null;
-        private static MethodInfo _jOverlayUpdateTimingMethod = null;
-        private static object _jOverlayInstance = null;
-        private static bool _jipperChecked = false;
+        private static FieldInfo _fOverlayInstance = null;
+        private static MethodInfo _mOverlayUpdateTiming = null;
+        private static FieldInfo _fJOverlayInstance = null;
+        private static MethodInfo _mJOverlayUpdateTiming = null;
+        private static bool _jipperReflectionInitialized = false;
+
+        // 持续流速平滑滤波 (EMA Smoothing) 状态
+        private static double _smoothedKps = 4.0;
 
         // 拟人按键离散度与微时差随机发生器
         private static readonly System.Random _rng = new System.Random();
@@ -102,31 +105,35 @@ namespace ADOFAIPlusPlus
         // 缓存所有可绑定的 KeyCode 枚举值
         private static KeyCode[] _allKeyCodes;
 
+        // 局内有效打谱按键缓存（用于完全阻断用户手动乱按干扰 KV）
+        private static HashSet<KeyCode> _trackedGameplayKeysSet = null;
+
         // 手部人体工学槽位拓扑（严格对应 2x8 16键：Row 1 为 Tab 1 2 E P = Backspace \）
         // 第一排核心指法：左手食指(3:E), 左手中指(2:2), 右手食指(4:P), 右手中指(5:=)
         // 第一排扩展指法：左手无名指(1:1), 右手无名指(6:Bksp), 左手小指(0:Tab), 右手小指(7:\)
-        private static readonly int[] _row1LeftErgonomic = new int[] { 3, 2, 4, 5, 1, 6, 0, 7 };
-        private static readonly int[] _row1RightErgonomic = new int[] { 4, 5, 3, 2, 6, 1, 7, 0 };
-        private static readonly int[] _allLeftSlots = new int[] { 3, 2, 4, 5, 1, 6, 0, 7, 11, 10, 9, 8, 12, 13, 14, 15 };
-        private static readonly int[] _allRightSlots = new int[] { 4, 5, 3, 2, 6, 1, 7, 0, 12, 13, 14, 15, 11, 10, 9, 8 };
+        // 核心人体工学原则：中心食指/中指优先，小指 (Tab:0 与 \:7) 始终排在最末位！
+        private static readonly int[] _row1LeftErgonomic = new int[] { 3, 4, 2, 5, 1, 6, 0, 7 };
+        private static readonly int[] _row1RightErgonomic = new int[] { 4, 3, 5, 2, 6, 1, 7, 0 };
+        private static readonly int[] _allLeftSlots = new int[] { 3, 4, 2, 5, 1, 6, 0, 7, 11, 10, 12, 13, 15, 14, 9, 8 };
+        private static readonly int[] _allRightSlots = new int[] { 4, 3, 5, 2, 6, 1, 7, 0, 11, 12, 10, 13, 15, 14, 9, 8 };
 
-        // 略快 3~4 键轮指（遵循偏好设定，严格限制在第一排核心四键 2, E, P, =）
-        private static readonly int[] _roll4LeftSeq = new int[] { 2, 3, 5, 4 };   // 2 -> E -> = -> P
-        private static readonly int[] _roll4RightSeq = new int[] { 5, 4, 2, 3 };  // = -> P -> 2 -> E
+        // 略快 3~4 键轮指（中心食指/中指领衔，严格限制在第一排核心四键 2, E, P, =）
+        private static readonly int[] _roll4LeftSeq = new int[] { 3, 4, 2, 5 };   // E -> P -> 2 -> =
+        private static readonly int[] _roll4RightSeq = new int[] { 4, 3, 5, 2 };  // P -> E -> = -> 2
 
         // 高速 5~6 键轮指（引入无名指 1 与 Backspace，仍绝不碰小指 Tab/\）
-        private static readonly int[] _roll6LeftSeq = new int[] { 1, 2, 3, 6, 5, 4 };  // 1 -> 2 -> E -> Bksp -> = -> P
-        private static readonly int[] _roll6RightSeq = new int[] { 6, 5, 4, 1, 2, 3 }; // Bksp -> = -> P -> 1 -> 2 -> E
+        private static readonly int[] _roll6LeftSeq = new int[] { 3, 4, 2, 5, 1, 6 };  // E -> P -> 2 -> = -> 1 -> Bksp
+        private static readonly int[] _roll6RightSeq = new int[] { 4, 3, 5, 2, 6, 1 }; // P -> E -> = -> 2 -> Bksp -> 1
 
-        // 极速 8 键轮指（包含完整第一排）
-        private static readonly int[] _roll8LeftSeq = new int[] { 0, 1, 2, 3, 7, 6, 5, 4 };
-        private static readonly int[] _roll8RightSeq = new int[] { 7, 6, 5, 4, 0, 1, 2, 3 };
+        // 极速 8 键轮指（仅在极高速持续流中才引入小指 Tab:0 与 \:7，且置于尾部）
+        private static readonly int[] _roll8LeftSeq = new int[] { 3, 4, 2, 5, 1, 6, 0, 7 };
+        private static readonly int[] _roll8RightSeq = new int[] { 4, 3, 5, 2, 6, 1, 7, 0 };
 
-        // 超极限全指波浪流（> 40 KPS 极限情况才进入第二排）
+        // 超极限全指波浪流（> 48 KPS 极限情况才进入第二排，A:8与Tab:0始终居末）
         private static readonly int[] _roll16Sequence = new int[]
         {
-            0, 1, 2, 3, 7, 6, 5, 4,
-            8, 9, 10, 11, 15, 14, 13, 12
+            4, 3, 5, 2, 6, 1, 7, 0,
+            11, 10, 12, 13, 15, 14, 9, 8
         };
 
         public static bool IsActive()
@@ -209,44 +216,99 @@ namespace ADOFAIPlusPlus
             }
         }
 
+        public static bool IsTrackedGameplayKey(KeyCode key)
+        {
+            if (key == KeyCode.None || key == KeyCode.Escape || key == KeyCode.F10 || key == KeyCode.F1)
+                return false;
+
+            if (_trackedGameplayKeysSet == null)
+            {
+                _trackedGameplayKeysSet = new HashSet<KeyCode>();
+                for (int i = 0; i < DefaultKeys.Length; i++)
+                {
+                    if (DefaultKeys[i] != KeyCode.None) _trackedGameplayKeysSet.Add(DefaultKeys[i]);
+                }
+                if (Main.Settings != null && Main.Settings.AutoplayKeyBindings != null)
+                {
+                    for (int i = 0; i < Main.Settings.AutoplayKeyBindings.Length; i++)
+                    {
+                        if (Main.Settings.AutoplayKeyBindings[i] != KeyCode.None)
+                            _trackedGameplayKeysSet.Add(Main.Settings.AutoplayKeyBindings[i]);
+                    }
+                }
+            }
+
+            return _trackedGameplayKeysSet.Contains(key);
+        }
+
+        public static void InvalidateTrackedKeys()
+        {
+            _trackedGameplayKeysSet = null;
+        }
+
+        public static bool TryGetKeyCodeByName(string name, out KeyCode code)
+        {
+            code = KeyCode.None;
+            if (string.IsNullOrEmpty(name)) return false;
+            try
+            {
+                code = (KeyCode)Enum.Parse(typeof(KeyCode), name, true);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static void NotifyJipperTiming(float timingMs)
         {
             try
             {
-                if (!_jipperChecked)
+                if (!_jipperReflectionInitialized)
                 {
-                    _jipperChecked = true;
                     Assembly[] asms = AppDomain.CurrentDomain.GetAssemblies();
                     for (int i = 0; i < asms.Length; i++)
                     {
-                        if (asms[i].GetName().Name == "JipperResourcePack")
+                        string asmName = asms[i].GetName().Name;
+                        if (asmName != null && asmName.StartsWith("JipperResourcePack"))
                         {
                             Type tOverlay = asms[i].GetType("JipperResourcePack.OverlayContents.Overlay");
                             if (tOverlay != null)
                             {
-                                FieldInfo fInst = tOverlay.GetField("Instance", BindingFlags.Public | BindingFlags.Static);
-                                if (fInst != null) _jipperOverlayInstance = fInst.GetValue(null);
-                                _jipperUpdateTimingMethod = tOverlay.GetMethod("UpdateTiming", BindingFlags.Public | BindingFlags.Instance, null, new Type[] { typeof(float), typeof(int) }, null);
+                                _fOverlayInstance = tOverlay.GetField("Instance", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                                _mOverlayUpdateTiming = tOverlay.GetMethod("UpdateTiming", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, new Type[] { typeof(float), typeof(int) }, null);
                             }
                             Type tJOverlay = asms[i].GetType("JipperResourcePack.Jongyeol.JOverlay");
                             if (tJOverlay != null)
                             {
-                                FieldInfo fJInst = tJOverlay.GetField("Instance", BindingFlags.Public | BindingFlags.Static);
-                                if (fJInst != null) _jOverlayInstance = fJInst.GetValue(null);
-                                _jOverlayUpdateTimingMethod = tJOverlay.GetMethod("UpdateTiming", BindingFlags.Public | BindingFlags.Instance, null, new Type[] { typeof(float), typeof(int) }, null);
+                                _fJOverlayInstance = tJOverlay.GetField("Instance", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                                _mJOverlayUpdateTiming = tJOverlay.GetMethod("UpdateTiming", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, new Type[] { typeof(float), typeof(int) }, null);
                             }
-                            break;
+                            if (_mOverlayUpdateTiming != null || _mJOverlayUpdateTiming != null)
+                            {
+                                _jipperReflectionInitialized = true;
+                                break;
+                            }
                         }
                     }
                 }
 
-                if (_jipperOverlayInstance != null && _jipperUpdateTimingMethod != null)
+                if (_fOverlayInstance != null && _mOverlayUpdateTiming != null)
                 {
-                    _jipperUpdateTimingMethod.Invoke(_jipperOverlayInstance, new object[] { timingMs, 0 });
+                    object inst = _fOverlayInstance.GetValue(null);
+                    if (inst != null)
+                    {
+                        _mOverlayUpdateTiming.Invoke(inst, new object[] { timingMs, 0 });
+                    }
                 }
-                if (_jOverlayInstance != null && _jOverlayUpdateTimingMethod != null)
+                if (_fJOverlayInstance != null && _mJOverlayUpdateTiming != null)
                 {
-                    _jOverlayUpdateTimingMethod.Invoke(_jOverlayInstance, new object[] { timingMs, 0 });
+                    object jInst = _fJOverlayInstance.GetValue(null);
+                    if (jInst != null)
+                    {
+                        _mJOverlayUpdateTiming.Invoke(jInst, new object[] { timingMs, 0 });
+                    }
                 }
             }
             catch {}
@@ -260,10 +322,12 @@ namespace ADOFAIPlusPlus
             _altHandParity = _dominantHand;
             _skipTapFloor = null;
             _roll4Cursor = 0;
+            _roll6Cursor = 0;
             _roll8Cursor = 0;
             _roll16Cursor = 0;
             _lastUsedSlot = -1;
             _secondLastUsedSlot = -1;
+            _smoothedKps = 4.0;
         }
 
         public static void ReleaseAllKeys()
@@ -472,21 +536,25 @@ namespace ADOFAIPlusPlus
                         KeyCode keyRight = GetSlotKey(slotRight);
                         double baseHold = ComputeHumanKeyHoldDuration(effectiveDt);
 
-                        // 人类双手双押具有 1.2ms ~ 3.5ms 的生理非对称时间差（绝不可能在微秒级完全同拍）
+                        // 人类双手双押具有 0.8ms ~ 3.2ms 的生理非对称微时差（绝不可能在微秒级完全同拍）
+                        // 惯用手设定代表概率偏好（约 72% 惯用手微先触键，28% 非惯用手微先触键，呈现自然概率分布而非机械化固定）
                         int dominant = (Main.Settings != null && Main.Settings.PreferRightHand) ? 1 : 0;
-                        double handDiffSec = 0.0012 + (_rng.NextDouble() * 0.0023);
-                        double leftDelay = (dominant == 0) ? 0.0 : handDiffSec;
-                        double rightDelay = (dominant == 1) ? 0.0 : handDiffSec;
+                        bool dominantLeads = _rng.NextDouble() < 0.72;
+                        bool rightLeads = (dominant == 1) ? dominantLeads : !dominantLeads;
+
+                        double handDiffSec = 0.0008 + (_rng.NextDouble() * 0.0024);
+                        double leftDelay = rightLeads ? handDiffSec : 0.0;
+                        double rightDelay = rightLeads ? 0.0 : handDiffSec;
 
                         // 双手点按时长也施加非对称微幅波动
-                        double leftHold = Math.Max(0.018, baseHold * (0.93 + _rng.NextDouble() * 0.14));
-                        double rightHold = Math.Max(0.018, baseHold * (0.93 + _rng.NextDouble() * 0.14));
+                        double leftHold = Math.Max(0.016, baseHold * (0.92 + _rng.NextDouble() * 0.16));
+                        double rightHold = Math.Max(0.016, baseHold * (0.92 + _rng.NextDouble() * 0.16));
 
                         if (keyLeft != KeyCode.None) TriggerTapKey(keyLeft, now + leftDelay, leftHold);
                         if (keyRight != KeyCode.None) TriggerTapKey(keyRight, now + rightDelay, rightHold);
 
-                        _lastUsedSlot = (dominant == 1) ? slotRight : slotLeft;
-                        _secondLastUsedSlot = (dominant == 1) ? slotLeft : slotRight;
+                        _lastUsedSlot = rightLeads ? slotLeft : slotRight;
+                        _secondLastUsedSlot = rightLeads ? slotRight : slotLeft;
                         _skipTapFloor = nextFloor.nextfloor;
                         _lastHitTime = now;
                     }
@@ -546,28 +614,50 @@ namespace ADOFAIPlusPlus
 
         private static double ComputeHumanKeyHoldDuration(double effectiveDt)
         {
-            // 人类点按时长基础区间为 22ms ~ 65ms，伴随生理手部微小抖动
+            // 人类点按时长基础区间为 18ms ~ 55ms，伴随生理手部微小抖动
             double baseHold = effectiveDt * 0.40;
-            if (baseHold < 0.022) baseHold = 0.022;
-            if (baseHold > 0.065) baseHold = 0.065;
+            if (baseHold < 0.018) baseHold = 0.018;
+            if (baseHold > 0.055) baseHold = 0.055;
 
             // 注入非对称生理离散波动（±6ms）
-            double jitter = (_rng.NextDouble() - 0.5) * 0.012;
-            return Math.Max(0.018, baseHold + jitter);
+            double jitter = (_rng.NextDouble() - 0.5) * 0.010;
+            return Math.Max(0.016, baseHold + jitter);
         }
 
         /// <summary>
         /// 拟人双手十指生物力学排键决策器：
         /// 遵循真实 ADOFAI 人类高手的肌肉记忆与生理特征：
-        /// 1. 低中速平点段（<= 6.8 KPS，约对应 408 BPM 以下直线或 204 BPM 拐弯）：坚守单指平点（主食指 E/P），绝无中指介入，绝无低速随意换手
-        /// 2. 中高速段（6.8 ~ 13.5 KPS）：双手食指单双交替（E <-> P）
-        /// 3. 高速段（13.5 ~ 24.0 KPS）：四指标准轮指（左中 2 -> 左食 E -> 右中 = -> 右食 P）
-        /// 4. 极速爆发段（24.0 ~ 36.0 KPS）：八指顺滑内旋流
-        /// 5. 超极限段（> 36.0 KPS）：16键全指内旋波浪流
+        /// 1. 平点慢速（<= 8.0 KPS）：固定单指平点（主食指 E/P），绝无中指介入，绝无低速随意换手
+        /// 2. 中速段（8.0 ~ 15.0 KPS）：双手食指单双交替（E <-> P）
+        /// 3. 略快三~四键（15.0 ~ 24.0 KPS）：第一排核心四键 (2, E, P, =) 内旋交替，中心指法领衔
+        /// 4. 高速五~六键（24.0 ~ 34.0 KPS）：引入无名指 (1 与 Backspace)，中心向外扩展，仍绝不碰小指 (Tab/\)
+        /// 5. 极速八键段（34.0 ~ 48.0 KPS）：第一排完整 8 键，Tab 与 \ 始终位于尾指位置
+        /// 6. 超极限爆发（> 48.0 KPS 极限情况）：才开始启用第二排按键，A 与 Tab 始终排在最末位
         /// </summary>
         private static int SelectHumanSlot(double dtPrev, double effectiveDt, bool isMidSpin)
         {
-            double kps = 1.0 / Math.Max(0.004, effectiveDt);
+            double instantKps = 1.0 / Math.Max(0.006, effectiveDt);
+            if (instantKps > 120.0) instantKps = 120.0;
+
+            // 持续流速平滑滤波 (EMA Smoothing)：
+            // 只有当连续多次击打处于高频时，流速才真正爬升；单个急转弯或微间隔绝不暴涨到 40+ KPS
+            if (dtPrev > 0.40)
+            {
+                _smoothedKps = Math.Min(instantKps, 6.0);
+            }
+            else
+            {
+                if (instantKps > _smoothedKps)
+                {
+                    _smoothedKps = _smoothedKps * 0.65 + instantKps * 0.35;
+                }
+                else
+                {
+                    _smoothedKps = _smoothedKps * 0.30 + instantKps * 0.70;
+                }
+            }
+            double kps = _smoothedKps;
+
             int dominant = (Main.Settings != null && Main.Settings.PreferRightHand) ? 1 : 0;
             _dominantHand = dominant;
 
@@ -579,11 +669,13 @@ namespace ADOFAIPlusPlus
                 _roll8Cursor = 0;
                 _roll16Cursor = 0;
                 _altHandParity = _dominantHand;
+                _smoothedKps = 4.0;
             }
 
             int preferredSlot;
 
-            // 特殊人体工学处理：中旋 (MidSpin) —— 人类绝对只会用主食指或双食指极速轻点，绝不向外伸手碰 Tab/\ 或第二排
+            // 特殊人体工学处理：中旋 (MidSpin) —— 人类绝对只会用双手主食指 (E/P) 或中指 (2/=) 轻点，
+            // 严格禁绝向外伸手碰 Tab/\，更绝不进入第二排 A 键！
             if (isMidSpin)
             {
                 int hand = _altHandParity;
@@ -594,21 +686,33 @@ namespace ADOFAIPlusPlus
                     preferredSlot = (preferredSlot == 3) ? 4 : 3;
                 }
 
-                int midSpinSlot = ResolveAvailableSlot(preferredSlot, true, true);
+                int[] midCandidates = (dominant == 1) ? new int[] { 4, 3, 5, 2 } : new int[] { 3, 4, 2, 5 };
+                int midSpinSlot = preferredSlot;
+                if (!IsSlotUsable(midSpinSlot, true))
+                {
+                    for (int mIdx = 0; mIdx < midCandidates.Length; mIdx++)
+                    {
+                        if (IsSlotUsable(midCandidates[mIdx], true))
+                        {
+                            midSpinSlot = midCandidates[mIdx];
+                            break;
+                        }
+                    }
+                }
                 _secondLastUsedSlot = _lastUsedSlot;
                 _lastUsedSlot = midSpinSlot;
                 return midSpinSlot;
             }
 
-            if (kps <= 7.0)
+            if (kps <= 8.0)
             {
-                // 档位 1：慢速至中低速单点节拍（<= 7.0 KPS，人类正常单指平点区间）
+                // 档位 1：慢速至中低速单点节拍（<= 8.0 KPS，人类正常单指平点区间）
                 // 纯单指单点：始终固定使用惯用手食指（默认右手食指 P:4 或左手食指 E:3），绝不在平点段切换中指或莫名换手
                 preferredSlot = (dominant == 1) ? 4 : 3;
             }
-            else if (kps <= 14.0)
+            else if (kps <= 15.0)
             {
-                // 档位 2：中速双手交替（7.0 ~ 14.0 KPS）—— 经典左右手食指单双交替（E:3 <-> P:4）
+                // 档位 2：中速双手交替（8.0 ~ 15.0 KPS）—— 经典左右手食指单双交替（E:3 <-> P:4）
                 int hand = _altHandParity;
                 _altHandParity = 1 - _altHandParity;
                 preferredSlot = (hand == 1) ? 4 : 3;
@@ -618,9 +722,9 @@ namespace ADOFAIPlusPlus
                     preferredSlot = (preferredSlot == 3) ? 4 : 3;
                 }
             }
-            else if (kps <= 22.0)
+            else if (kps <= 24.0)
             {
-                // 档位 3：略快三~四键（14.0 ~ 22.0 KPS）—— 遵循左/右撇子设定，仅在第一排核心四键 (2, E, P, =) 之间内旋交替！
+                // 档位 3：略快三~四键（15.0 ~ 24.0 KPS）—— 遵循左/右撇子设定，仅在第一排核心四键 (2, E, P, =) 之间内旋交替！
                 // 绝不碰无名指 (1/Bksp)，更绝不碰小指 (Tab/\)！
                 if (dominant == 0)
                 {
@@ -633,10 +737,10 @@ namespace ADOFAIPlusPlus
                     _roll4Cursor = (_roll4Cursor + 1) % _roll4RightSeq.Length;
                 }
             }
-            else if (kps <= 30.0)
+            else if (kps <= 34.0)
             {
-                // 档位 4：高速五~六键（22.0 ~ 30.0 KPS）—— 引入无名指 (1 与 Backspace)
-                // 左手 1, 2, E 与 右手 Backspace, =, P 内旋交替，仍绝不碰小指 (Tab/\)
+                // 档位 4：高速五~六键（24.0 ~ 34.0 KPS）—— 引入无名指 (1 与 Backspace)
+                // 左手 1, 2, E 与 右手 Backspace, =, P 内旋交替，中心向外扩散，仍绝不碰小指 (Tab/\)
                 if (dominant == 0)
                 {
                     preferredSlot = _roll6LeftSeq[_roll6Cursor % _roll6LeftSeq.Length];
@@ -648,9 +752,9 @@ namespace ADOFAIPlusPlus
                     _roll6Cursor = (_roll6Cursor + 1) % _roll6RightSeq.Length;
                 }
             }
-            else if (kps <= 40.0)
+            else if (kps <= 48.0)
             {
-                // 档位 5：极速八键内旋（30.0 ~ 40.0 KPS）—— 第一排完整 8 键 (Tab, 1, 2, E, \, Bksp, =, P)
+                // 档位 5：极速八键内旋（34.0 ~ 48.0 KPS）—— 第一排完整 8 键，中心食指领衔，Tab 与 \ 始终位于尾部
                 preferredSlot = (dominant == 0)
                     ? _roll8LeftSeq[_roll8Cursor % _roll8LeftSeq.Length]
                     : _roll8RightSeq[_roll8Cursor % _roll8RightSeq.Length];
@@ -658,12 +762,12 @@ namespace ADOFAIPlusPlus
             }
             else
             {
-                // 档位 6：超极限多于 8 键爆发（> 40.0 KPS 极限情况）—— 才开始启用第二排按键
+                // 档位 6：超极限多于 8 键爆发（> 48.0 KPS 极限情况）—— 才开始启用第二排按键，A 与 Tab 始终置于最末位
                 preferredSlot = _roll16Sequence[_roll16Cursor % _roll16Sequence.Length];
                 _roll16Cursor = (_roll16Cursor + 1) % _roll16Sequence.Length;
             }
 
-            int resolvedSlot = ResolveAvailableSlot(preferredSlot, kps > 7.0, kps <= 30.0);
+            int resolvedSlot = ResolveAvailableSlot(preferredSlot, kps > 8.0, kps <= 48.0);
             _secondLastUsedSlot = _lastUsedSlot;
             _lastUsedSlot = resolvedSlot;
             return resolvedSlot;
@@ -690,13 +794,16 @@ namespace ADOFAIPlusPlus
                 }
             }
 
-            // 次级容错搜索
+            // 次级容错搜索（若 restrictToRow1 为真，严格使用第一排人体工学拓扑，绝不进入第二排 A 键）
             int maxSlots = restrictToRow1 ? 8 : 16;
             for (int i = 0; i < maxSlots; i++)
             {
-                if (IsSlotUsable(i, false))
+                int candidate = (dominant == 1)
+                    ? (restrictToRow1 ? _row1RightErgonomic[i % _row1RightErgonomic.Length] : _allRightSlots[i % _allRightSlots.Length])
+                    : (restrictToRow1 ? _row1LeftErgonomic[i % _row1LeftErgonomic.Length] : _allLeftSlots[i % _allLeftSlots.Length]);
+                if (IsSlotUsable(candidate, false))
                 {
-                    return i;
+                    return candidate;
                 }
             }
 
