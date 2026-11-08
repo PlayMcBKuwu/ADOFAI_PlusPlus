@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using UnityEngine;
 
-namespace ADOFAIPlusPlus
+namespace BetterJudgment
 {
     /// <summary>
     /// 自动播放+ (Autoplay+) 核心引擎：
@@ -60,7 +60,6 @@ namespace ADOFAIPlusPlus
         private static KeyCode _activeHoldKey = KeyCode.None;
         private static int _activeHoldSlot = -1;
         private static scrFloor _activeHoldFloor = null;
-        private static scrFloor _skipTapFloor = null;
 
         // 待在 scrPlanet.SwitchChosen Prefix 中应用的拟人缓存角度（弧度 rad）
         private static bool _hasPendingAngle = false;
@@ -68,7 +67,8 @@ namespace ADOFAIPlusPlus
 
         // 拟人排键状态机
         private static double _lastHitTime = -10.0;
-        private static int _dominantHand = 1; // 0 = 左手 (E), 1 = 右手 (P)
+        private static int _dominantHand = 0; // 0 = 左手, 1 = 右手
+        private static int _sameHandTapCount = 0;
         private static int _altHandParity = 0;
         private static int _roll4Cursor = 0;
         private static int _roll8Cursor = 0;
@@ -166,9 +166,9 @@ namespace ADOFAIPlusPlus
             _hasPendingAngle = false;
             _pendingCandidateAngle = 0.0;
             _lastHitTime = -10.0;
-            _dominantHand = (Main.Settings != null && Main.Settings.PreferRightHand) ? 1 : 0;
-            _altHandParity = _dominantHand;
-            _skipTapFloor = null;
+            _dominantHand = _rng.Next(2);
+            _sameHandTapCount = 0;
+            _altHandParity = 0;
             _roll4Cursor = 0;
             _roll8Cursor = 0;
             _roll16Cursor = 0;
@@ -205,7 +205,6 @@ namespace ADOFAIPlusPlus
             _activeHoldKey = KeyCode.None;
             _activeHoldSlot = -1;
             _activeHoldFloor = null;
-            _skipTapFloor = null;
         }
 
         public static void Update()
@@ -298,13 +297,7 @@ namespace ADOFAIPlusPlus
             bool nextIsHold = (nextFloor != null && nextFloor.holdLength > -1);
             bool isHoldReleaseOnly = (wasHolding && !nextIsHold);
 
-            if (_skipTapFloor == nextFloor)
-            {
-                // 伪双押联动：当前砖已在上一砖的双押时连带触发，跳过重复敲击
-                _skipTapFloor = null;
-                _lastHitTime = now;
-            }
-            else if (!isAutoTile)
+            if (!isAutoTile)
             {
                 if (isHoldReleaseOnly)
                 {
@@ -324,79 +317,29 @@ namespace ADOFAIPlusPlus
                     double dtNext = GetLookaheadIntervalSec(nextFloor, planet);
                     double effectiveDt = Math.Min(dtPrev, dtNext);
 
-                    // 伪双押（Pseudo-Doubles / Flam）检测：
-                    // 当后两砖间隔极短（dtNext <= 0.055s）且同时按下两侧均能保持在 Pure (X-完美) 判定窗口时，
-                    // 采取人类高手标准的双手食指双押 (E + P) 解决！除非双押会掉判定到非 X完美！
-                    bool canDoDoubleTap = false;
-                    if (nextFloor != null && nextFloor.nextfloor != null && !nextIsHold && !nextFloor.auto && !nextFloor.nextfloor.auto)
-                    {
-                        double pureTimeSec = 0.025;
-                        try
-                        {
-                            Difficulty diff = GCS.difficulty;
-                            double bpmTimesSpeed = (planet.conductor != null) ? planet.conductor.bpm : 100.0;
-                            if (planet.planetarySystem != null && planet.planetarySystem.speed > 0.0)
-                                bpmTimesSpeed *= planet.planetarySystem.speed;
-                            double pitch = (planet.conductor != null && planet.conductor.song != null && planet.conductor.song.pitch > 0f) ? (double)planet.conductor.song.pitch : 1.0;
-                            double marginScale = (currFloor != null && currFloor.marginScale > 0.0) ? currFloor.marginScale : 1.0;
-                            var bounds = scrMisc.GetAdjustedAngleBoundaryInDeg(diff, bpmTimesSpeed, pitch, marginScale);
-                            if (bpmTimesSpeed > 0)
-                            {
-                                pureTimeSec = (bounds.Pure / (bpmTimesSpeed * 6.0)) / pitch;
-                            }
-                        }
-                        catch {}
+                    int chosenSlot = SelectHumanSlot(dtPrev, effectiveDt);
+                    KeyCode chosenKey = GetSlotKey(chosenSlot);
 
-                        // 双押时间差各占一半：dtNext * 0.5 必须落在 Pure 时间窗口之内
-                        if (dtNext <= 0.055 && (dtNext * 0.5) < (pureTimeSec * 0.95))
+                    if (chosenKey != KeyCode.None)
+                    {
+                        if (nextIsHold)
                         {
-                            canDoDoubleTap = true;
+                            StartHoldKey(chosenKey, chosenSlot, nextFloor);
+                        }
+                        else
+                        {
+                            double holdDur = ComputeHumanKeyHoldDuration(effectiveDt);
+                            TriggerTapKey(chosenKey, now, holdDur);
                         }
                     }
 
-                    if (canDoDoubleTap)
-                    {
-                        // 执行双押：双手主食指 (左手 Slot 3 + 右手 Slot 4) 同时触发！
-                        int slotLeft = 3;
-                        int slotRight = 4;
-                        KeyCode keyLeft = GetSlotKey(slotLeft);
-                        KeyCode keyRight = GetSlotKey(slotRight);
-                        double holdDur = ComputeHumanKeyHoldDuration(effectiveDt);
-
-                        if (keyLeft != KeyCode.None) TriggerTapKey(keyLeft, now, holdDur);
-                        if (keyRight != KeyCode.None) TriggerTapKey(keyRight, now, holdDur);
-
-                        _lastUsedSlot = slotRight;
-                        _secondLastUsedSlot = slotLeft;
-                        _skipTapFloor = nextFloor.nextfloor;
-                        _lastHitTime = now;
-                    }
-                    else
-                    {
-                        int chosenSlot = SelectHumanSlot(dtPrev, effectiveDt);
-                        KeyCode chosenKey = GetSlotKey(chosenSlot);
-
-                        if (chosenKey != KeyCode.None)
-                        {
-                            if (nextIsHold)
-                            {
-                                StartHoldKey(chosenKey, chosenSlot, nextFloor);
-                            }
-                            else
-                            {
-                                double holdDur = ComputeHumanKeyHoldDuration(effectiveDt);
-                                TriggerTapKey(chosenKey, now, holdDur);
-                            }
-                        }
-
-                        _lastHitTime = now;
-                    }
+                    _lastHitTime = now;
                 }
             }
 
-            // 2. 拟人目标 X 精准度计算（在合法及格边界内平滑注入高斯抖动，非自动砖/非中旋/非长条松尾时生效）
+            // 2. 拟人目标 X 精准度计算（当目标精准度 < 99.99% 且非自动砖/非中旋/非长条松尾时生效）
             float targetAccPercent = Main.Settings.AutoplayAccuracy;
-            if (isAutoTile || isHoldReleaseOnly)
+            if (targetAccPercent >= 99.99f || isAutoTile || isHoldReleaseOnly)
             {
                 return;
             }
@@ -462,6 +405,9 @@ namespace ADOFAIPlusPlus
                 }
 
                 Difficulty diff = GCS.difficulty;
+
+                // 注意签名：GetAdjustedAngleBoundaryInDeg(Difficulty difficulty, double bpmTimesSpeed, double conductorPitch, double marginMult)
+                // 返回值为角度（度 °，例如 30° / 45° / 60°）
                 scrMisc.HitMarginGeneralWithXPerfectValues<double> bounds =
                     scrMisc.GetAdjustedAngleBoundaryInDeg(diff, (double)bpmTimesSpeed, pitch, marginScale);
 
@@ -479,43 +425,73 @@ namespace ADOFAIPlusPlus
                     ? (_simulatedWeightedAccSum / (double)_simulatedHitCount)
                     : targetXAcc;
 
-                // 更新自相关人类生理节奏漂移（AR(1) 过程：alpha = 0.65，模拟生理微惯性）
+                // 更新自相关人类节奏漂移（AR(1) 过程：模拟人类连续几拍偏早或偏晚的生理惯性）
                 double u1 = Math.Max(1e-7, _rng.NextDouble());
                 double u2 = _rng.NextDouble();
                 double stdNormal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
                 _correlatedBias = 0.65 * _correlatedBias + 0.35 * stdNormal;
 
-                double absDegOffset;
+                // 决定本次击打的目标判定区间：
+                // PerfectPlus = 1.0 权重, Early/LatePerfect = 0.75 权重, VeryEarly/Late (Counted) = 0.001 权重
+                int desiredTier = 0; // 0 = Pure Perfect, 1 = Early/Late Perfect, 2 = Counted (VeryEarly/Late)
 
-                if (targetAccPercent >= 99.99f)
+                if (targetXAcc >= 0.75)
                 {
-                    // === 100% X-精准度模拟 ===
-                    // 真实人类 100% X-精准度绝不是 0ms 死线！
-                    // 人类的微动作抖动在 Pure (X-Perfect) 窗口内平滑振荡：
-                    // 绝不越过 pureBound，保证 100% 每一击都是 X-Perfect！
-                    // 真实角度偏移注入给 planet.cachedAngle，使误击量计 (Hit Error Meter) 在中心自然波动！
-                    double sigma = pureBound * 0.22;
-                    double jitter = (_correlatedBias * 0.6 + stdNormal * 0.4) * sigma;
-                    absDegOffset = Math.Min(pureBound * 0.55, Math.Abs(jitter));
+                    double pPerfectTier = (1.0 - targetXAcc) / 0.25;
+                    double accError = currentXAcc - targetXAcc;
+                    pPerfectTier = Math.Max(0.0, Math.Min(1.0, pPerfectTier + accError * 3.5));
+
+                    bool canUseCounted = (targetXAcc < 0.86 && countedBound > perfectBound + 0.5 && currentXAcc > targetXAcc + 0.015);
+                    if (canUseCounted && Math.Abs(_correlatedBias) > 2.1 && _rng.NextDouble() < 0.08)
+                    {
+                        desiredTier = 2;
+                    }
+                    else if (perfectBound > pureBound + 0.2 && _rng.NextDouble() < pPerfectTier)
+                    {
+                        desiredTier = 1;
+                    }
+                    else
+                    {
+                        desiredTier = 0;
+                    }
                 }
                 else
                 {
-                    // === < 100% 目标精准度连续高斯模拟 ===
-                    // 废除离散台阶式跳变！使用连续正态分布自然溢出：
-                    // 目标精准度越低，高斯标准差 sigma 越宽，使部分击打自然延伸至 Early/Late Perfect 区间
-                    double accError = currentXAcc - targetXAcc;
-                    double pPerfectTarget = Math.Max(0.0, Math.Min(1.0, (1.0 - targetXAcc) / 0.25));
-                    pPerfectTarget = Math.Max(0.0, Math.Min(1.0, pPerfectTarget + accError * 2.5));
-
-                    double sigmaFactor = 0.22 + pPerfectTarget * 0.60;
-                    double rawError = (_correlatedBias * 0.55 + stdNormal * 0.45) * (pureBound * sigmaFactor);
-                    absDegOffset = Math.Abs(rawError);
-
-                    double safeMax = (countedBound > 0.1) ? countedBound * 0.85 : pureBound;
-                    if (absDegOffset > safeMax)
+                    if (currentXAcc > targetXAcc + 0.005 && countedBound > perfectBound + 0.2)
                     {
-                        absDegOffset = safeMax;
+                        desiredTier = 2;
                     }
+                    else if (currentXAcc > targetXAcc - 0.02 && perfectBound > pureBound + 0.2)
+                    {
+                        desiredTier = (_rng.NextDouble() < 0.65) ? 1 : 0;
+                    }
+                    else
+                    {
+                        desiredTier = 0;
+                    }
+                }
+
+                // 在选定的合法判定区间内采样度数偏移量（度 °）
+                double absDegOffset;
+                if (desiredTier == 2 && countedBound > perfectBound + 0.2)
+                {
+                    double low = perfectBound + (countedBound - perfectBound) * 0.15;
+                    double high = perfectBound + (countedBound - perfectBound) * 0.78;
+                    double t = 0.5 + 0.25 * Math.Tanh(_correlatedBias);
+                    absDegOffset = low + (high - low) * t;
+                }
+                else if (desiredTier == 1 && perfectBound > pureBound + 0.2)
+                {
+                    double low = pureBound + (perfectBound - pureBound) * 0.16;
+                    double high = pureBound + (perfectBound - pureBound) * 0.82;
+                    double t = 0.5 + 0.30 * Math.Tanh(_correlatedBias);
+                    absDegOffset = low + (high - low) * t;
+                }
+                else
+                {
+                    double maxPure = pureBound * 0.75;
+                    double frac = Math.Min(0.95, Math.Abs(_correlatedBias) * 0.35);
+                    absDegOffset = maxPure * frac;
                 }
 
                 bool isLate;
@@ -525,16 +501,17 @@ namespace ADOFAIPlusPlus
                 }
                 else
                 {
-                    isLate = (_rng.NextDouble() < 0.70) ? _lastEarlyLateSign : !_lastEarlyLateSign;
+                    isLate = (_rng.NextDouble() < 0.75) ? _lastEarlyLateSign : !_lastEarlyLateSign;
                 }
                 _lastEarlyLateSign = isLate;
 
+                // scrPlanet.angle / targetExitAngle / cachedAngle 及 GetHitMarginInDeg 内部均使用弧度 (Radians)！
                 double absRadOffset = absDegOffset * (Math.PI / 180.0);
                 bool isCW = (planet.planetarySystem != null) ? planet.planetarySystem.isCW : (currFloor == null || !currFloor.isCCW);
                 double signedRadDiff = isLate ? absRadOffset : -absRadOffset;
                 double candidateAngle = planet.targetExitAngle + (isCW ? signedRadDiff : -signedRadDiff);
 
-                // 终极安全校验：直接调用游戏底层 GetHitMarginInDeg
+                // 终极安全校验：直接调用游戏底层 GetHitMarginInDeg + HitMarginHelper.IsCounted 验证！
                 HitMargin verifiedMargin = scrMisc.GetHitMarginInDeg(
                     diff,
                     (float)candidateAngle,
@@ -544,20 +521,13 @@ namespace ADOFAIPlusPlus
                     (float)pitch,
                     marginScale);
 
-                // 100% 目标下强制保证判定为 X-Perfect
-                if (targetAccPercent >= 99.99f && verifiedMargin != HitMargin.PerfectPlus && verifiedMargin != HitMargin.XPerfect && verifiedMargin != HitMargin.PerfectMinus)
-                {
-                    candidateAngle = planet.targetExitAngle + (isCW ? 0.001 : -0.001);
-                    verifiedMargin = HitMargin.PerfectPlus;
-                }
-
                 if (HitMarginHelper.IsCounted(verifiedMargin, GCS.hitMarginLimit))
                 {
                     _hasPendingAngle = true;
                     _pendingCandidateAngle = candidateAngle;
                     planet.cachedAngle = candidateAngle;
                     hitTick = null;
-                    tempUseOldAuto = true; // 关键：使 scrController.UpdateHitErrorMeter 不被强制归零！
+                    tempUseOldAuto = true;
 
                     double weight = 1.0;
                     if (verifiedMargin == HitMargin.EarlyPerfect || verifiedMargin == HitMargin.LatePerfect)
@@ -617,73 +587,91 @@ namespace ADOFAIPlusPlus
         }
 
         /// <summary>
-        /// 拟人双手十指生物力学排键决策器：
-        /// 遵循真实 ADOFAI 人类高手的肌肉记忆与生理特征：
-        /// 1. 低中速平点段（<= 6.8 KPS，约对应 408 BPM 以下直线或 204 BPM 拐弯）：坚守单指平点（主食指 E/P），绝无中指介入，绝无低速随意换手
-        /// 2. 中高速段（6.8 ~ 13.5 KPS）：双手食指单双交替（E <-> P）
-        /// 3. 高速段（13.5 ~ 24.0 KPS）：四指标准轮指（左中 2 -> 左食 E -> 右中 = -> 右食 P）
-        /// 4. 极速爆发段（24.0 ~ 36.0 KPS）：八指顺滑内旋流
-        /// 5. 超极限段（> 36.0 KPS）：16键全指内旋波浪流
+        /// 拟人双手十指生物力学排键决策器
         /// </summary>
         private static int SelectHumanSlot(double dtPrev, double effectiveDt)
         {
             double kps = 1.0 / Math.Max(0.004, effectiveDt);
-            int dominant = (Main.Settings != null && Main.Settings.PreferRightHand) ? 1 : 0;
-            _dominantHand = dominant;
 
-            // 乐句长停顿重置：当与上一拍间隔 > 1.20s 时（长休止/长段停顿），手部自然回位
-            if (dtPrev > 1.20)
+            // 乐句停顿重置：当与上一拍间隔 > 300ms 时，手部自然回位到主食指
+            if (dtPrev > 0.30)
             {
+                _sameHandTapCount = 0;
                 _roll4Cursor = 0;
                 _roll8Cursor = 0;
-                _roll16Cursor = 0;
+                if (_rng.NextDouble() < 0.35)
+                {
+                    _dominantHand = 1 - _dominantHand;
+                }
                 _altHandParity = _dominantHand;
             }
 
             int preferredSlot;
 
-            if (kps <= 6.8)
+            if (kps <= 3.8)
             {
-                // 档位 1：慢速至中低速单点节拍（<= 6.8 KPS，人类正常单指平点极限约 400+ BPM 直线）
-                // 纯单指单点：始终固定使用惯用手食指（默认右手食指 P 或左手食指 E），绝不在平点段切换中指或莫名换手
-                preferredSlot = (dominant == 1) ? 4 : 3;
-            }
-            else if (kps <= 13.5)
-            {
-                // 档位 2：中高速双手交替（6.8 ~ 13.5 KPS）—— 经典左右手食指单双交替（E <-> P）
-                int hand = _altHandParity;
-                _altHandParity = 1 - _altHandParity;
-                preferredSlot = (hand == 1) ? 4 : 3;
-
-                // 防止因任何原因连续重复同一个槽位
-                if (preferredSlot == _lastUsedSlot)
+                // 档位 1：慢速节拍（<= 3.8 KPS）—— 人类以惯用食指平点为主（E 或 P），连续数拍后自然换手或微调中指
+                _sameHandTapCount++;
+                if (_sameHandTapCount > 5 + _rng.Next(5))
                 {
-                    preferredSlot = (preferredSlot == 3) ? 4 : 3;
+                    _dominantHand = 1 - _dominantHand;
+                    _sameHandTapCount = 1;
+                }
+
+                bool useMiddleFinger = (_sameHandTapCount % 4 == 0 && _rng.NextDouble() < 0.22);
+                if (_dominantHand == 0)
+                {
+                    preferredSlot = useMiddleFinger ? 2 : 3; // 左食指 E(3) 或左中指 2(2)
+                }
+                else
+                {
+                    preferredSlot = useMiddleFinger ? 5 : 4; // 右食指 P(4) 或右中指 =(5)
                 }
             }
-            else if (kps <= 24.0)
+            else if (kps <= 10.5)
             {
-                // 档位 3：快速四指轮指（13.5 ~ 24.0 KPS）—— 左中(2)->左食(E)->右中(=)->右食(P)
+                // 档位 2：中速交互（3.8 ~ 10.5 KPS）—— 经典左右手食指单双交替（E <-> P），中高密度时偶发中指分担负荷
+                int hand = _altHandParity;
+                _altHandParity = 1 - _altHandParity;
+                _dominantHand = hand;
+                _sameHandTapCount = 0;
+
+                bool useMiddle = (kps > 7.2 && _rng.NextDouble() < 0.28);
+                if (hand == 0)
+                {
+                    preferredSlot = useMiddle ? 2 : 3; // 左手 2 / E
+                }
+                else
+                {
+                    preferredSlot = useMiddle ? 5 : 4; // 右手 = / P
+                }
+
+                if (preferredSlot == _lastUsedSlot)
+                {
+                    preferredSlot = (hand == 0) ? (preferredSlot == 3 ? 2 : 3) : (preferredSlot == 4 ? 5 : 4);
+                }
+            }
+            else if (kps <= 19.0)
+            {
+                // 档位 3：快速四指内旋轮指（10.5 ~ 19.0 KPS）—— 左中(2)->左食(E)->右中(=)->右食(P)
                 preferredSlot = _roll4Sequence[_roll4Cursor % _roll4Sequence.Length];
                 _roll4Cursor = (_roll4Cursor + 1) % _roll4Sequence.Length;
                 _altHandParity = (_roll4Cursor < 2) ? 1 : 0;
             }
-            else if (kps <= 36.0)
+            else if (kps <= 32.0)
             {
-                // 档位 4：高速八指内旋流（24.0 ~ 36.0 KPS）—— 左手 Tab->1->2->E，右手 \->Bksp->=->P
+                // 档位 4：高速八指顺滑内旋流（19.0 ~ 32.0 KPS）—— 左手 Tab->1->2->E 顺滑内滚，右手 \->Bksp->=->P 顺滑内滚
                 preferredSlot = _roll8Sequence[_roll8Cursor % _roll8Sequence.Length];
                 _roll8Cursor = (_roll8Cursor + 1) % _roll8Sequence.Length;
             }
             else
             {
-                // 档位 5：超高速全指爆发（> 36.0 KPS）—— 16键双排顺滑内旋波浪
+                // 档位 5：超高速全指爆发（> 32.0 KPS）—— 16键双排顺滑内旋波浪
                 preferredSlot = _roll16Sequence[_roll16Cursor % _roll16Sequence.Length];
                 _roll16Cursor = (_roll16Cursor + 1) % _roll16Sequence.Length;
             }
 
-            // 当 kps <= 6.8 时为纯单指单点，允许并必须重复使用同一按键（avoidImmediateRepeat = false）
-            // 当 kps > 6.8 时为多指/双手交互，不能连续按同一键
-            int resolvedSlot = ResolveAvailableSlot(preferredSlot, kps > 6.8);
+            int resolvedSlot = ResolveAvailableSlot(preferredSlot, kps > 4.0);
             _secondLastUsedSlot = _lastUsedSlot;
             _lastUsedSlot = resolvedSlot;
             return resolvedSlot;

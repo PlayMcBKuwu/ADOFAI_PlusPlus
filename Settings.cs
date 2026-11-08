@@ -2,7 +2,7 @@ using System;
 using UnityEngine;
 using UnityModManagerNet;
 
-namespace ADOFAIPlusPlus
+namespace BetterJudgment
 {
     public enum JudgmentMode
     {
@@ -142,7 +142,7 @@ namespace ADOFAIPlusPlus
         /// 判定指示器+（前置为判定指示器）
         /// 将 Counted 文字分别替换为「标判！」和「宽判！」（精简模式显示 NOR / LEN）
         /// </summary>
-        public bool EnableHitIndicatorPlus = true;
+        public bool EnableHitIndicatorPlus = false;
 
         /// <summary>
         /// 为「太快！！」与「太慢！！」启用判定指示器
@@ -164,7 +164,7 @@ namespace ADOFAIPlusPlus
         /// 另类判定指示器+
         /// 默认为启用，为指示器文字提供实际早晚方向指示（太快/太慢）
         /// </summary>
-        public bool EnableAlternativeIndicatorPlus = false;
+        public bool EnableAlternativeIndicatorPlus = true;
 
         /// <summary>
         /// 另类指示器工作方式（默认：正负符号前缀 -宽判！太快 / +标判！太慢）
@@ -192,19 +192,9 @@ namespace ADOFAIPlusPlus
         public bool HidePlanetRing = false;
 
         /// <summary>
-        /// 杂项：始终允许关卡编辑器（官谱亦可在关卡编辑器中打开）
-        /// </summary>
-        public bool AlwaysAllowEditor = true;
-
-        /// <summary>
         /// 杂项：自动播放+（独立开关，内部零延迟判定 + 双通道拟人按键驱动 KV）
         /// </summary>
         public bool AutoplayPlus = false;
-
-        /// <summary>
-        /// 自动播放+：惯用手偏好（默认右手优先 P，关闭为左手优先 E）
-        /// </summary>
-        public bool PreferRightHand = true;
 
         /// <summary>
         /// 自动播放+：拟人目标 X 精准度 (50% ~ 100%)

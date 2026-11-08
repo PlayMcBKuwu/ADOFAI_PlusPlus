@@ -4,7 +4,7 @@ using HarmonyLib;
 using UnityEngine;
 using UnityModManagerNet;
 
-namespace ADOFAIPlusPlus
+namespace BetterJudgment
 {
     public static class Main
     {
@@ -744,17 +744,8 @@ namespace ADOFAIPlusPlus
 
             GUILayout.Space(6);
 
-            bool oldEditor = Settings.AlwaysAllowEditor;
-            bool newEditor = GUILayout.Toggle(oldEditor, " " + Loc.Get("misc.editor_toggle"));
-            if (newEditor != oldEditor)
-            {
-                Settings.AlwaysAllowEditor = newEditor;
-            }
-
-            GUILayout.Space(6);
-
             bool oldAutoPlus = Settings.AutoplayPlus;
-            bool newAutoPlus = GUILayout.Toggle(oldAutoPlus, " " + Loc.Get("misc.autoplay_plus_toggle") + " (Alt + Shift + A)");
+            bool newAutoPlus = GUILayout.Toggle(oldAutoPlus, " " + Loc.Get("misc.autoplay_plus_toggle"));
             if (newAutoPlus != oldAutoPlus)
             {
                 Settings.AutoplayPlus = newAutoPlus;
@@ -765,18 +756,6 @@ namespace ADOFAIPlusPlus
             {
                 GUILayout.Space(6);
                 GUILayout.BeginVertical("box");
-
-                // 惯用手偏好切换
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("<b>" + Loc.Get("misc.autoplay_hand_label") + "</b>", GUILayout.Width(200));
-                bool curRight = Settings.PreferRightHand;
-                bool chooseRight = GUILayout.Toggle(curRight, " " + Loc.Get("misc.autoplay_hand_right"), GUILayout.Width(160));
-                bool chooseLeft = GUILayout.Toggle(!curRight, " " + Loc.Get("misc.autoplay_hand_left"), GUILayout.Width(160));
-                if (chooseRight && !curRight) Settings.PreferRightHand = true;
-                else if (chooseLeft && curRight) Settings.PreferRightHand = false;
-                GUILayout.EndHorizontal();
-
-                GUILayout.Space(4);
 
                 // 拟人目标 X 精准度滑块与快捷按钮
                 GUILayout.BeginHorizontal();

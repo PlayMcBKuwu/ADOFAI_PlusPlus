@@ -7,7 +7,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace ADOFAIPlusPlus
+namespace BetterJudgment
 {
     public class IndicatorData
     {
@@ -289,40 +289,6 @@ namespace ADOFAIPlusPlus
             }
         }
 
-        public static string GetHardcodedTimingText(bool isEarly, bool isDouble)
-        {
-            SystemLanguage lang = Loc.CurrentLanguage;
-            if (lang == SystemLanguage.Chinese || lang == SystemLanguage.ChineseSimplified || lang == SystemLanguage.ChineseTraditional)
-            {
-                if (isEarly) return isDouble ? "太快！！" : "太快！";
-                return isDouble ? "太慢！！" : "太慢！";
-            }
-            if (lang == SystemLanguage.Korean)
-            {
-                if (isEarly) return isDouble ? "빠름!!" : "빠름!";
-                return isDouble ? "느림!!" : "느림!";
-            }
-            if (lang == SystemLanguage.Japanese)
-            {
-                if (Main.Settings != null && Main.Settings.BetterJapaneseLocalization)
-                {
-                    if (isEarly) return isDouble ? "早すぎ！！" : "早すぎ！";
-                    return isDouble ? "遅すぎ！！" : "遅すぎ！";
-                }
-                if (isEarly) return isDouble ? "Too Early!!" : "Early!";
-                return isDouble ? "Late!!" : "Late!";
-            }
-            if (lang == SystemLanguage.English)
-            {
-                if (isEarly) return isDouble ? "Too Early!!" : "Early!";
-                return isDouble ? "Late!!" : "Late!";
-            }
-
-            string word = Loc.Get(isEarly ? "indicator.tooEarly" : "indicator.tooLate");
-            string excl = isDouble ? Loc.GetDoubleExcl() : Loc.GetSingleExcl();
-            return word + excl;
-        }
-
         public static string GetIndicatorDisplayText(bool isLenient, bool isEarly, bool isDouble, int rawMs)
         {
             HitMarginTextPreset preset = Persistence.hitMarginText;
@@ -341,40 +307,42 @@ namespace ADOFAIPlusPlus
             // 2. 精简判定模式 (Shortened)
             if (preset == HitMarginTextPreset.Shortened)
             {
-                if (Main.Settings.EnableHitIndicatorPlus && Main.Settings.EnableAlternativeIndicatorPlus)
+                if (Main.Settings.EnableAlternativeIndicatorPlus)
                 {
                     if (Main.Settings.AltStyle == AlternativeIndicatorStyle.SignPrefix)
                     {
+                        // 符号前缀模式：
+                        // 及格: -NOR / +NOR / -LEN / +LEN
+                        // 失误/空敲: --NOR / ++NOR / --LEN / ++LEN
                         string sign = isEarly ? "-" : "+";
                         if (isDouble) sign = sign + sign;
                         return sign + (isLenient ? "LEN" : "NOR");
                     }
                     else
                     {
+                        // 字符前缀模式：
+                        // 及格: NE / NL / LE / LL
+                        // 失误/空敲: NTE / NTL / LTE / LTL
                         string dir = isEarly ? (isDouble ? "TE" : "E") : (isDouble ? "TL" : "L");
                         return suffix + dir;
                     }
                 }
                 if (Main.Settings.EnableHitIndicatorPlus)
                 {
+                    // 判定指示器+：LEN / NOR (失误时附加 !!)
                     return (isLenient ? "LEN" : "NOR") + (isDouble ? "!!" : string.Empty);
                 }
                 return null;
             }
 
             // 3. 默认文字模式 (Default / EarlyOrLate 等)
-            if (!Main.Settings.EnableHitIndicatorPlus)
-            {
-                return null;
-            }
-
             string exclText = isDouble ? Loc.GetDoubleExcl() : Loc.GetSingleExcl();
 
             if (Main.Settings.EnableAlternativeIndicatorPlus)
             {
                 if (Main.Settings.AltStyle == AlternativeIndicatorStyle.SignPrefix)
                 {
-                    // 另类指示器+（符号前缀）：-宽判！(太快) / +标判！(太慢) / --宽判！！ / ++标判！！
+                    // 另类指示器+（符号前缀[默认]）：-宽判！(太快) / +标判！(太慢) / --宽判！！ / ++标判！！
                     string sign = isEarly ? "-" : "+";
                     if (isDouble) sign = sign + sign;
                     string word = isLenient ? Loc.Get("indicator.lenient") : Loc.Get("indicator.normal");
@@ -382,15 +350,19 @@ namespace ADOFAIPlusPlus
                 }
                 else
                 {
-                    // 另类指示器+（字符前缀）：完全硬编码对应语言词汇 (如 L-太快！/ N-太慢！/ L-Early! / N-Late!)
-                    string timingText = GetHardcodedTimingText(isEarly, isDouble);
-                    return suffix + "-" + timingText;
+                    // 另类指示器+（字符前缀）：直接以游戏内当前语言的原生判定文本作为占位符拼接 (如 L-Late!! / L太快！)
+                    return suffix + NativeHitTextToken;
                 }
             }
 
-            // 标准判定指示器+：纯正硬编码文字「宽判！」/「标判！」(双感叹号时: 宽判！！/ 标判！！)
-            string baseWord = isLenient ? Loc.Get("indicator.lenient") : Loc.Get("indicator.normal");
-            return baseWord + exclText;
+            if (Main.Settings.EnableHitIndicatorPlus)
+            {
+                // 判定指示器+：宽判！/ 标判！(双感叹号时: 宽判！！/ 标判！！)
+                string word = isLenient ? Loc.Get("indicator.lenient") : Loc.Get("indicator.normal");
+                return word + exclText;
+            }
+
+            return null;
         }
 
         public static void SetDifficultyArrowsActive(scrUIController ui, bool showArrows)
@@ -635,20 +607,6 @@ namespace ADOFAIPlusPlus
             UpdateHUDText();
         }
 
-        public static string GetAutoplayPlusText()
-        {
-            try
-            {
-                string baseAuto = RDString.Get("status.autoplay", null);
-                if (!string.IsNullOrEmpty(baseAuto))
-                {
-                    return baseAuto + "+";
-                }
-            }
-            catch {}
-            return Loc.Get("hud.autoplay_plus");
-        }
-
         public static void ApplyJapaneseFontPreference()
         {
             try
@@ -755,7 +713,7 @@ namespace ADOFAIPlusPlus
                     if (Main.Enabled && Main.Settings != null && Main.Settings.MasterEnabled && Main.Settings.AutoplayPlus)
                     {
                         txt.enabled = true;
-                        txt.text = GetAutoplayPlusText();
+                        txt.text = Loc.Get("hud.autoplay_plus");
                         if (ADOBase.editor != null && ADOBase.editor.pausedInPlayMode)
                         {
                             txt.text = txt.text + " + " + RDString.Get("status.paused", null);
@@ -1090,7 +1048,7 @@ namespace ADOFAIPlusPlus
                     if (autoPlusTxt != null)
                     {
                         autoPlusTxt.enabled = true;
-                        autoPlusTxt.text = GetAutoplayPlusText();
+                        autoPlusTxt.text = Loc.Get("hud.autoplay_plus");
                         if (ADOBase.editor != null && ADOBase.editor.pausedInPlayMode)
                         {
                             autoPlusTxt.text = autoPlusTxt.text + " + " + RDString.Get("status.paused", null);
@@ -1684,28 +1642,54 @@ namespace ADOFAIPlusPlus
                 if (CurrentIndicator == null || !__instance.gameObject.activeSelf)
                     return;
 
-                if (!string.IsNullOrEmpty(CurrentIndicator.DisplayText) && __instance.text != null)
+                if (__instance.text != null && __instance.text.font != null && __instance.text.fontSharedMaterial != null)
                 {
-                    __instance.text.text = CurrentIndicator.DisplayText;
+                    if (__instance.text.fontSharedMaterial.mainTexture != __instance.text.font.material.mainTexture)
+                    {
+                        __instance.text.fontSharedMaterial = __instance.text.font.material;
+                    }
+                }
+
+                if (CurrentIndicator.DisplayText != null && __instance.text != null)
+                {
+                    string display = CurrentIndicator.DisplayText;
+                    if (display.IndexOf(NativeHitTextToken) >= 0)
+                    {
+                        string nativeText = __instance.text.text;
+                        if (string.IsNullOrEmpty(nativeText))
+                        {
+                            nativeText = "Early!";
+                        }
+                        bool isCjkText = IsCjkStart(nativeText);
+                        string replacement = isCjkText ? nativeText : ("-" + nativeText);
+                        display = display.Replace(NativeHitTextToken, replacement);
+                    }
+                    __instance.text.text = display;
                 }
 
                 if (__instance.xPerfectBorder != null)
                 {
+                    if (__instance.xPerfectBorder.font != null && __instance.xPerfectBorder.fontSharedMaterial != null)
+                    {
+                        if (__instance.xPerfectBorder.fontSharedMaterial.mainTexture != __instance.xPerfectBorder.font.material.mainTexture)
+                        {
+                            if (RDConstants.data != null &&
+                                __instance.xPerfectBorder.font == RDConstants.data.chineseFontTMPro &&
+                                RDConstants.data.chineseFontTMProXPerfectBorderMaterial != null)
+                            {
+                                __instance.xPerfectBorder.fontMaterial = RDConstants.data.chineseFontTMProXPerfectBorderMaterial;
+                            }
+                            else
+                            {
+                                __instance.xPerfectBorder.fontSharedMaterial = __instance.xPerfectBorder.font.material;
+                            }
+                        }
+                    }
+
                     Color borderCol = CurrentIndicator.OutlineColor;
                     bool colorShaderBorder = (Main.Settings == null || Main.Settings.ColorHitTextBorder);
-
-                    // 确保 xPerfectBorder 使用与主文本一致的字体 asset 与 material，彻底避免 CJK 缺字漏显
-                    if (__instance.text != null && __instance.xPerfectBorder.font != __instance.text.font)
-                    {
-                        __instance.xPerfectBorder.font = __instance.text.font;
-                        __instance.xPerfectBorder.fontSharedMaterial = __instance.text.fontSharedMaterial;
-                    }
-
                     __instance.xPerfectBorder.gameObject.SetActive(true);
-                    if (__instance.text != null)
-                    {
-                        __instance.xPerfectBorder.text = __instance.text.text;
-                    }
+                    __instance.xPerfectBorder.text = __instance.text.text;
                     __instance.xPerfectBorder.color = borderCol;
 
                     if (colorShaderBorder)
@@ -2088,12 +2072,6 @@ namespace ADOFAIPlusPlus
 
                 bool inPlayable = IsInPlayableLevel();
 
-                // 自动播放+运行中按 ESC 释放所有模拟按键，由原版 RDInput.cancelPress 触发 TogglePauseGame
-                if (AutoplayBot.IsActive() && inPlayable && Input.GetKeyDown(KeyCode.Escape))
-                {
-                    AutoplayBot.ReleaseAllKeys();
-                }
-
                 // 仅在可游玩关卡内记录当前尝试使用的判定模式
                 if (inPlayable)
                 {
@@ -2106,9 +2084,8 @@ namespace ADOFAIPlusPlus
                     UsedCustomThisAttempt = false;
                 }
 
-                // 快捷键监听：Alt + N 切换不死，Alt + Shift + A 切换自动播放+，Alt + A 切换标准自动播放
+                // 快捷键监听：Alt + N 切换不死，Alt + A 切换自动播放
                 bool holdingAlt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
-                bool holdingShift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
                 if (holdingAlt && Input.GetKeyDown(KeyCode.N))
                 {
@@ -2121,17 +2098,7 @@ namespace ADOFAIPlusPlus
                     }
                 }
 
-                if (holdingAlt && holdingShift && Input.GetKeyDown(KeyCode.A))
-                {
-                    Main.Settings.AutoplayPlus = !Main.Settings.AutoplayPlus;
-                    ApplyAutoplayPlus(Main.Settings.AutoplayPlus);
-                    Main.Settings.Save(Main.ModEntry);
-                    if (scrSfx.instance != null)
-                    {
-                        scrSfx.instance.PlaySfx(Main.Settings.AutoplayPlus ? SfxSound.ModifierActivate : SfxSound.ModifierDeactivate, MixerGroup.InterfaceParent);
-                    }
-                }
-                else if (holdingAlt && Input.GetKeyDown(KeyCode.A))
+                if (holdingAlt && Input.GetKeyDown(KeyCode.A))
                 {
                     Main.Settings.Autoplay = !Main.Settings.Autoplay;
                     ApplyAutoplay(Main.Settings.Autoplay);
@@ -2288,8 +2255,13 @@ namespace ADOFAIPlusPlus
         {
             public static void Prefix(scrController __instance)
             {
-                // 不再在此处调用 AsyncInputManager.ClearKeys()，防止吞掉 ESC 键导致无法暂停游戏
-                // 模拟按键与多余击打的拦截已由 Patch_ScrPlayer_HitInputEvent 和 ValidInputWasTriggered 等可靠负责
+                if (AutoplayBot.IsPlayingInLevel() &&
+                    __instance != null &&
+                    __instance.state == States.PlayerControl &&
+                    !__instance.paused)
+                {
+                    AsyncInputManager.ClearKeys();
+                }
             }
         }
 
@@ -2500,422 +2472,5 @@ namespace ADOFAIPlusPlus
                 }
             }
         }
-
-
-        private static readonly FieldInfo F_PauseButtons = AccessTools.Field(typeof(PauseMenu), "pauseButtons");
-        private static readonly FieldInfo F_OpenInEditorButton = AccessTools.Field(typeof(PauseMenu), "openInEditorButton");
-        private static readonly FieldInfo F_PauseMenuChain = AccessTools.Field(typeof(PauseMenu), "pauseMenuChain");
-        private static readonly FieldInfo F_ButtonsContainer = AccessTools.Field(typeof(PauseMenu), "buttonsContainer");
-        private static readonly FieldInfo F_CurrentButtons = AccessTools.Field(typeof(PauseMenu), "currentButtons");
-        private static readonly FieldInfo F_SelectedIndex = AccessTools.Field(typeof(PauseMenu), "selectedIndex");
-
-        public static void SaveClipToWav(AudioClip clip, string path)
-        {
-            if (clip == null || string.IsNullOrEmpty(path)) return;
-            float[] samples = new float[clip.samples * clip.channels];
-            MethodInfo mGetData = typeof(AudioClip).GetMethod("GetData", new Type[] { typeof(float[]), typeof(int) });
-            if (mGetData != null)
-            {
-                mGetData.Invoke(clip, new object[] { samples, 0 });
-            }
-
-            using (System.IO.FileStream fs = new System.IO.FileStream(path, System.IO.FileMode.Create))
-            using (System.IO.BinaryWriter bw = new System.IO.BinaryWriter(fs))
-            {
-                int channels = clip.channels;
-                int sampleRate = clip.frequency;
-                int subChunk2Size = samples.Length * 2;
-                int chunkSize = 36 + subChunk2Size;
-
-                byte[] riffTag = new byte[] { 0x52, 0x49, 0x46, 0x46 }; // "RIFF"
-                byte[] waveTag = new byte[] { 0x57, 0x41, 0x56, 0x45 }; // "WAVE"
-                byte[] fmtTag  = new byte[] { 0x66, 0x6D, 0x74, 0x20 }; // "fmt "
-                byte[] dataTag = new byte[] { 0x64, 0x61, 0x74, 0x61 }; // "data"
-
-                bw.Write(riffTag);
-                bw.Write(chunkSize);
-                bw.Write(waveTag);
-                bw.Write(fmtTag);
-                bw.Write(16);
-                bw.Write((short)1);
-                bw.Write((short)channels);
-                bw.Write(sampleRate);
-                bw.Write(sampleRate * channels * 2);
-                bw.Write((short)(channels * 2));
-                bw.Write((short)16);
-                bw.Write(dataTag);
-                bw.Write(subChunk2Size);
-
-                for (int i = 0; i < samples.Length; i++)
-                {
-                    float f = samples[i];
-                    if (f > 1f) f = 1f;
-                    else if (f < -1f) f = -1f;
-                    short s = (short)(f * 32767f);
-                    bw.Write(s);
-                }
-            }
-        }
-
-        public static void ExportTextureToPNG(Texture2D tex, string destPath)
-        {
-            if (tex == null || string.IsNullOrEmpty(destPath)) return;
-            try
-            {
-                if (System.IO.File.Exists(destPath)) return;
-                byte[] pngBytes = null;
-                try
-                {
-                    pngBytes = ImageConversion.EncodeToPNG(tex);
-                }
-                catch {}
-
-                if (pngBytes == null || pngBytes.Length == 0)
-                {
-                    RenderTexture rt = RenderTexture.GetTemporary(tex.width, tex.height, 0, RenderTextureFormat.ARGB32);
-                    Graphics.Blit(tex, rt);
-                    RenderTexture prev = RenderTexture.active;
-                    RenderTexture.active = rt;
-                    Texture2D readable = new Texture2D(tex.width, tex.height, TextureFormat.RGBA32, false);
-                    readable.ReadPixels(new Rect(0, 0, tex.width, tex.height), 0, 0);
-                    readable.Apply();
-                    RenderTexture.active = prev;
-                    RenderTexture.ReleaseTemporary(rt);
-                    pngBytes = ImageConversion.EncodeToPNG(readable);
-                    UnityEngine.Object.Destroy(readable);
-                }
-
-                if (pngBytes != null && pngBytes.Length > 0)
-                {
-                    System.IO.File.WriteAllBytes(destPath, pngBytes);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning("[ADOFAI++] Failed to export texture to PNG: " + ex.Message);
-            }
-        }
-
-        public static void ExportOfficialLevelAndOpenInEditor(PauseMenu pm)
-        {
-            try
-            {
-                string levelName = GCS.internalLevelName;
-                if (string.IsNullOrEmpty(levelName))
-                {
-                    levelName = ADOBase.currentLevel;
-                }
-                if (string.IsNullOrEmpty(levelName))
-                {
-                    levelName = "OfficialLevel";
-                }
-
-                char[] invalidChars = System.IO.Path.GetInvalidFileNameChars();
-                string safeName = levelName;
-                for (int i = 0; i < invalidChars.Length; i++)
-                {
-                    safeName = safeName.Replace(invalidChars[i], '_');
-                }
-
-                string baseDir = System.IO.Path.Combine(System.IO.Directory.GetParent(Application.dataPath).FullName, "CustomLevels");
-                string exportDir = System.IO.Path.Combine(baseDir, "Official_" + safeName);
-                if (!System.IO.Directory.Exists(exportDir))
-                {
-                    System.IO.Directory.CreateDirectory(exportDir);
-                }
-
-                string adofaiPath = System.IO.Path.Combine(exportDir, "main.adofai");
-                string wavPath = System.IO.Path.Combine(exportDir, "song.wav");
-
-                AudioClip clip = null;
-                if (scrConductor.instance != null && scrConductor.instance.song != null)
-                {
-                    clip = scrConductor.instance.song.clip;
-                }
-                else if (ADOBase.conductor != null && ADOBase.conductor.song != null)
-                {
-                    clip = ADOBase.conductor.song.clip;
-                }
-
-                bool hasAudio = false;
-                if (clip != null)
-                {
-                    try
-                    {
-                        if (!System.IO.File.Exists(wavPath))
-                        {
-                            SaveClipToWav(clip, wavPath);
-                        }
-                        hasAudio = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning("[ADOFAI++] Failed to export audio clip to WAV: " + ex.Message);
-                    }
-                }
-
-                // 导出官方关卡外部资源（图片、装饰贴图、背景图）：
-                // 1. 从 scrDecorationManager.instance.imageHolder 导出所有已加载贴图
-                try
-                {
-                    if (scrDecorationManager.instance != null && scrDecorationManager.instance.imageHolder != null)
-                    {
-                        TextureManager th = scrDecorationManager.instance.imageHolder;
-                        if (th.customTextures != null)
-                        {
-                            foreach (var kvp in th.customTextures)
-                            {
-                                if (kvp.Value != null && kvp.Value.texture != null)
-                                {
-                                    string fName = System.IO.Path.GetFileName(kvp.Key);
-                                    if (string.IsNullOrEmpty(fName)) fName = kvp.Value.texture.name + ".png";
-                                    if (!fName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) fName += ".png";
-                                    ExportTextureToPNG(kvp.Value.texture, System.IO.Path.Combine(exportDir, fName));
-                                }
-                            }
-                        }
-                        if (th.customSprites != null)
-                        {
-                            foreach (var kvp in th.customSprites)
-                            {
-                                if (kvp.Value != null && kvp.Value.texture != null)
-                                {
-                                    string fName = System.IO.Path.GetFileName(kvp.Key);
-                                    if (string.IsNullOrEmpty(fName)) fName = kvp.Value.texture.name + ".png";
-                                    if (!fName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) fName += ".png";
-                                    ExportTextureToPNG(kvp.Value.texture, System.IO.Path.Combine(exportDir, fName));
-                                }
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning("[ADOFAI++] Failed to export decoration manager textures: " + ex.Message);
-                }
-
-                // 2. 导出场景中所有 SpriteRenderer 贴图（防止遗漏背景或特效贴图）
-                try
-                {
-                    SpriteRenderer[] renderers = UnityEngine.Object.FindObjectsOfType<SpriteRenderer>();
-                    if (renderers != null)
-                    {
-                        for (int i = 0; i < renderers.Length; i++)
-                        {
-                            SpriteRenderer sr = renderers[i];
-                            if (sr != null && sr.sprite != null && sr.sprite.texture != null)
-                            {
-                                string sName = sr.sprite.name;
-                                if (string.IsNullOrEmpty(sName)) sName = sr.sprite.texture.name;
-                                if (!string.IsNullOrEmpty(sName))
-                                {
-                                    if (!sName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) sName += ".png";
-                                    ExportTextureToPNG(sr.sprite.texture, System.IO.Path.Combine(exportDir, sName));
-                                }
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning("[ADOFAI++] Failed to export scene sprite textures: " + ex.Message);
-                }
-
-                ADOFAI.LevelData ld = null;
-                if (scnGame.instance != null && scnGame.instance.levelData != null)
-                {
-                    ld = scnGame.instance.levelData;
-                }
-
-                if (ld != null)
-                {
-                    ADOFAI.LevelData exportLd = ld.Copy();
-                    if (hasAudio)
-                    {
-                        exportLd.songFilename = "song.wav";
-                    }
-
-                    if ((exportLd.angleData == null || exportLd.angleData.Count == 0) && !string.IsNullOrEmpty(exportLd.pathData))
-                    {
-                        float[] angles = ADOFAI.FloorHelper.MigratePathData(exportLd.pathData);
-                        exportLd.angleData = new List<float>(angles);
-                        exportLd.pathData = "";
-                        exportLd.isOldLevel = false;
-                    }
-                    else
-                    {
-                        exportLd.isOldLevel = false;
-                        exportLd.pathData = "";
-                    }
-
-                    // 规范化装饰图片路径为文件名相对路径
-                    if (exportLd.decorations != null)
-                    {
-                        for (int i = 0; i < exportLd.decorations.Count; i++)
-                        {
-                            var deco = exportLd.decorations[i];
-                            if (deco != null && deco.ContainsKey("decorationImage"))
-                            {
-                                string img = deco.GetString("decorationImage");
-                                if (!string.IsNullOrEmpty(img))
-                                {
-                                    deco["decorationImage"] = System.IO.Path.GetFileName(img);
-                                }
-                            }
-                        }
-                    }
-
-                    // 规范化背景图片路径
-                    if (exportLd.levelEvents != null)
-                    {
-                        for (int i = 0; i < exportLd.levelEvents.Count; i++)
-                        {
-                            var lev = exportLd.levelEvents[i];
-                            if (lev != null && lev.ContainsKey("bgImage"))
-                            {
-                                string bg = lev.GetString("bgImage");
-                                if (!string.IsNullOrEmpty(bg))
-                                {
-                                    lev["bgImage"] = System.IO.Path.GetFileName(bg);
-                                }
-                            }
-                        }
-                    }
-
-                    string json = exportLd.Encode();
-                    System.IO.File.WriteAllText(adofaiPath, json, System.Text.Encoding.UTF8);
-                }
-                else
-                {
-                    Debug.LogError("[ADOFAI++] LevelData is null during official level export!");
-                    return;
-                }
-
-                if (pm != null)
-                {
-                    pm.Hide();
-                }
-                DOTween.KillAll();
-                if (scrConductor.instance != null && scrConductor.instance.song != null)
-                {
-                    scrConductor.instance.song.Stop();
-                }
-
-                GCS.internalLevelName = null;
-                GCS.customLevelPaths = new string[] { adofaiPath };
-                GCS.customLevelIndex = 0;
-                GCS.customLevelId = "Official_" + safeName;
-                if (scnGame.instance != null)
-                {
-                    scnGame.instance.levelPath = adofaiPath;
-                }
-                scnEditor.levelToOpenOnLoad = adofaiPath;
-
-                UnityEngine.SceneManagement.SceneManager.LoadScene("scnEditor");
-            }
-            catch (Exception e)
-            {
-                Debug.LogError("[ADOFAI++] Error exporting official level to editor: " + e);
-            }
-        }
-
-        /// <summary>
-        /// 始终允许关卡编辑器：在官方关卡暂停菜单中强制添加「在关卡编辑器中打开」按钮
-        /// </summary>
-        [HarmonyPatch(typeof(PauseMenu), "RefreshLayout")]
-        public static class Patch_PauseMenu_RefreshLayout
-        {
-            public static void Postfix(PauseMenu __instance)
-            {
-                if (!Main.Enabled || Main.Settings == null || !Main.Settings.MasterEnabled || !Main.Settings.AlwaysAllowEditor)
-                    return;
-                if (__instance == null || F_OpenInEditorButton == null || F_PauseButtons == null)
-                    return;
-
-                PauseButton openBtn = F_OpenInEditorButton.GetValue(__instance) as PauseButton;
-                if (openBtn == null) return;
-
-                GeneralPauseButton[] buttons = F_PauseButtons.GetValue(__instance) as GeneralPauseButton[];
-                if (buttons == null) return;
-
-                List<GeneralPauseButton> list = new List<GeneralPauseButton>(buttons);
-                if (!list.Contains(openBtn))
-                {
-                    int idx = Math.Max(0, list.Count - 1);
-                    list.Insert(idx, openBtn);
-                    F_PauseButtons.SetValue(__instance, list.ToArray());
-
-                    if (F_PauseMenuChain != null && F_ButtonsContainer != null)
-                    {
-                        PauseMenuChain chain = F_PauseMenuChain.GetValue(__instance) as PauseMenuChain;
-                        RectTransform container = F_ButtonsContainer.GetValue(__instance) as RectTransform;
-                        if (chain != null && container != null)
-                        {
-                            float width = (list.Count - 1) * 58f + 52f;
-                            container.sizeDelta = new Vector2(width, container.sizeDelta.y);
-                            chain.UpdateLinks();
-                            chain.UpdateHeight(container);
-                        }
-                    }
-                }
-                // 绝不在此处修改 currentButtons，避免破坏按键索引 index 导致设置等子菜单无法点击
-            }
-        }
-
-        [HarmonyPatch(typeof(PauseMenu), "ShowMainMenu")]
-        public static class Patch_PauseMenu_ShowMainMenu
-        {
-            public static void Postfix(PauseMenu __instance)
-            {
-                if (!Main.Enabled || Main.Settings == null || !Main.Settings.MasterEnabled || !Main.Settings.AlwaysAllowEditor)
-                    return;
-                if (__instance == null || F_OpenInEditorButton == null)
-                    return;
-
-                PauseButton openBtn = F_OpenInEditorButton.GetValue(__instance) as PauseButton;
-                if (openBtn != null && openBtn.gameObject != null)
-                {
-                    openBtn.gameObject.SetActive(true);
-                }
-            }
-        }
-
-        /// <summary>
-        /// 始终允许关卡编辑器：点击「在关卡编辑器中打开」时，若为官谱/DLC/内置谱则导出为干净自定义谱面并唤起编辑器
-        /// </summary>
-        [HarmonyPatch(typeof(PauseMenu), "Choose")]
-        public static class Patch_PauseMenu_Choose
-        {
-            public static bool Prefix(PauseMenu __instance)
-            {
-                if (!Main.Enabled || Main.Settings == null || !Main.Settings.MasterEnabled || !Main.Settings.AlwaysAllowEditor)
-                    return true;
-                if (__instance == null || F_CurrentButtons == null || F_SelectedIndex == null)
-                    return true;
-
-                List<GeneralPauseButton> buttons = F_CurrentButtons.GetValue(__instance) as List<GeneralPauseButton>;
-                if (buttons == null)
-                    return true;
-                int selectedIndex = (int)F_SelectedIndex.GetValue(__instance);
-                if (selectedIndex < 0 || selectedIndex >= buttons.Count)
-                    return true;
-
-                PauseButton pb = buttons[selectedIndex] as PauseButton;
-                if (pb != null && pb.buttonType == PauseMenu.ButtonType.LevelEditor)
-                {
-                    // 若当前已经是自定义关卡（硬盘上存在实际文件）或正在编辑器中，绝不拦截！直接由原版处理！
-                    bool isRealCustomLevel = (scnGame.instance != null && !string.IsNullOrEmpty(scnGame.instance.levelPath) && System.IO.File.Exists(scnGame.instance.levelPath));
-                    if (ADOBase.isLevelEditor || isRealCustomLevel)
-                    {
-                        return true;
-                    }
-
-                    ExportOfficialLevelAndOpenInEditor(__instance);
-                    return false;
-                }
-                return true;
-            }
-        }
-
     }
 }
