@@ -2074,6 +2074,16 @@ namespace ADOFAIPlusPlus
 
                 bool inPlayable = IsInPlayableLevel();
 
+                // 自动播放+运行中允许按 ESC 暂停游戏并释放所有模拟按键
+                if (AutoplayBot.IsActive() && inPlayable && Input.GetKeyDown(KeyCode.Escape))
+                {
+                    if (__instance != null && !__instance.paused)
+                    {
+                        AutoplayBot.ReleaseAllKeys();
+                        __instance.TogglePauseGame();
+                    }
+                }
+
                 // 仅在可游玩关卡内记录当前尝试使用的判定模式
                 if (inPlayable)
                 {
@@ -2257,13 +2267,8 @@ namespace ADOFAIPlusPlus
         {
             public static void Prefix(scrController __instance)
             {
-                if (AutoplayBot.IsPlayingInLevel() &&
-                    __instance != null &&
-                    __instance.state == States.PlayerControl &&
-                    !__instance.paused)
-                {
-                    AsyncInputManager.ClearKeys();
-                }
+                // 不再在此处调用 AsyncInputManager.ClearKeys()，防止吞掉 ESC 键导致无法暂停游戏
+                // 模拟按键与多余击打的拦截已由 Patch_ScrPlayer_HitInputEvent 和 ValidInputWasTriggered 等可靠负责
             }
         }
 

@@ -68,7 +68,6 @@ namespace ADOFAIPlusPlus
         // 拟人排键状态机
         private static double _lastHitTime = -10.0;
         private static int _dominantHand = 0; // 0 = 左手, 1 = 右手
-        private static int _sameHandTapCount = 0;
         private static int _altHandParity = 0;
         private static int _roll4Cursor = 0;
         private static int _roll8Cursor = 0;
@@ -166,8 +165,7 @@ namespace ADOFAIPlusPlus
             _hasPendingAngle = false;
             _pendingCandidateAngle = 0.0;
             _lastHitTime = -10.0;
-            _dominantHand = _rng.Next(2);
-            _sameHandTapCount = 0;
+            _dominantHand = 0;
             _altHandParity = 0;
             _roll4Cursor = 0;
             _roll8Cursor = 0;
@@ -587,91 +585,71 @@ namespace ADOFAIPlusPlus
         }
 
         /// <summary>
-        /// 拟人双手十指生物力学排键决策器
+        /// 拟人双手十指生物力学排键决策器：
+        /// 遵循真实 ADOFAI 人类高手的肌肉记忆与生理特征：
+        /// 1. 低中速平点段（<= 6.8 KPS，约对应 408 BPM 以下直线或 204 BPM 拐弯）：坚守单指平点（主食指 E/P），绝无中指介入，绝无低速随意换手
+        /// 2. 中高速段（6.8 ~ 13.5 KPS）：双手食指单双交替（E <-> P）
+        /// 3. 高速段（13.5 ~ 24.0 KPS）：四指标准轮指（左中 2 -> 左食 E -> 右中 = -> 右食 P）
+        /// 4. 极速爆发段（24.0 ~ 36.0 KPS）：八指顺滑内旋流
+        /// 5. 超极限段（> 36.0 KPS）：16键全指内旋波浪流
         /// </summary>
         private static int SelectHumanSlot(double dtPrev, double effectiveDt)
         {
             double kps = 1.0 / Math.Max(0.004, effectiveDt);
 
-            // 乐句停顿重置：当与上一拍间隔 > 300ms 时，手部自然回位到主食指
-            if (dtPrev > 0.30)
+            // 乐句长停顿重置：当与上一拍间隔 > 1.20s 时（长休止/长段停顿），手部自然回位
+            if (dtPrev > 1.20)
             {
-                _sameHandTapCount = 0;
                 _roll4Cursor = 0;
                 _roll8Cursor = 0;
-                if (_rng.NextDouble() < 0.35)
-                {
-                    _dominantHand = 1 - _dominantHand;
-                }
+                _roll16Cursor = 0;
                 _altHandParity = _dominantHand;
             }
 
             int preferredSlot;
 
-            if (kps <= 3.8)
+            if (kps <= 6.8)
             {
-                // 档位 1：慢速节拍（<= 3.8 KPS）—— 人类以惯用食指平点为主（E 或 P），连续数拍后自然换手或微调中指
-                _sameHandTapCount++;
-                if (_sameHandTapCount > 5 + _rng.Next(5))
-                {
-                    _dominantHand = 1 - _dominantHand;
-                    _sameHandTapCount = 1;
-                }
-
-                bool useMiddleFinger = (_sameHandTapCount % 4 == 0 && _rng.NextDouble() < 0.22);
-                if (_dominantHand == 0)
-                {
-                    preferredSlot = useMiddleFinger ? 2 : 3; // 左食指 E(3) 或左中指 2(2)
-                }
-                else
-                {
-                    preferredSlot = useMiddleFinger ? 5 : 4; // 右食指 P(4) 或右中指 =(5)
-                }
+                // 档位 1：慢速至中低速单点节拍（<= 6.8 KPS，人类正常单指平点极限约 400+ BPM 直线）
+                // 纯单指单点：始终固定使用惯用手食指（默认左手食指 E 或右手食指 P），绝不在平点段切换中指或莫名换手
+                preferredSlot = (_dominantHand == 0) ? 3 : 4;
             }
-            else if (kps <= 10.5)
+            else if (kps <= 13.5)
             {
-                // 档位 2：中速交互（3.8 ~ 10.5 KPS）—— 经典左右手食指单双交替（E <-> P），中高密度时偶发中指分担负荷
+                // 档位 2：中高速双手交替（6.8 ~ 13.5 KPS）—— 经典左右手食指单双交替（E <-> P）
                 int hand = _altHandParity;
                 _altHandParity = 1 - _altHandParity;
-                _dominantHand = hand;
-                _sameHandTapCount = 0;
+                preferredSlot = (hand == 0) ? 3 : 4;
 
-                bool useMiddle = (kps > 7.2 && _rng.NextDouble() < 0.28);
-                if (hand == 0)
-                {
-                    preferredSlot = useMiddle ? 2 : 3; // 左手 2 / E
-                }
-                else
-                {
-                    preferredSlot = useMiddle ? 5 : 4; // 右手 = / P
-                }
-
+                // 防止因任何原因连续重复同一个槽位
                 if (preferredSlot == _lastUsedSlot)
                 {
-                    preferredSlot = (hand == 0) ? (preferredSlot == 3 ? 2 : 3) : (preferredSlot == 4 ? 5 : 4);
+                    preferredSlot = (preferredSlot == 3) ? 4 : 3;
                 }
             }
-            else if (kps <= 19.0)
+            else if (kps <= 24.0)
             {
-                // 档位 3：快速四指内旋轮指（10.5 ~ 19.0 KPS）—— 左中(2)->左食(E)->右中(=)->右食(P)
+                // 档位 3：快速四指轮指（13.5 ~ 24.0 KPS）—— 左中(2)->左食(E)->右中(=)->右食(P)
                 preferredSlot = _roll4Sequence[_roll4Cursor % _roll4Sequence.Length];
                 _roll4Cursor = (_roll4Cursor + 1) % _roll4Sequence.Length;
                 _altHandParity = (_roll4Cursor < 2) ? 1 : 0;
             }
-            else if (kps <= 32.0)
+            else if (kps <= 36.0)
             {
-                // 档位 4：高速八指顺滑内旋流（19.0 ~ 32.0 KPS）—— 左手 Tab->1->2->E 顺滑内滚，右手 \->Bksp->=->P 顺滑内滚
+                // 档位 4：高速八指内旋流（24.0 ~ 36.0 KPS）—— 左手 Tab->1->2->E，右手 \->Bksp->=->P
                 preferredSlot = _roll8Sequence[_roll8Cursor % _roll8Sequence.Length];
                 _roll8Cursor = (_roll8Cursor + 1) % _roll8Sequence.Length;
             }
             else
             {
-                // 档位 5：超高速全指爆发（> 32.0 KPS）—— 16键双排顺滑内旋波浪
+                // 档位 5：超高速全指爆发（> 36.0 KPS）—— 16键双排顺滑内旋波浪
                 preferredSlot = _roll16Sequence[_roll16Cursor % _roll16Sequence.Length];
                 _roll16Cursor = (_roll16Cursor + 1) % _roll16Sequence.Length;
             }
 
-            int resolvedSlot = ResolveAvailableSlot(preferredSlot, kps > 4.0);
+            // 当 kps <= 6.8 时为纯单指单点，允许并必须重复使用同一按键（avoidImmediateRepeat = false）
+            // 当 kps > 6.8 时为多指/双手交互，不能连续按同一键
+            int resolvedSlot = ResolveAvailableSlot(preferredSlot, kps > 6.8);
             _secondLastUsedSlot = _lastUsedSlot;
             _lastUsedSlot = resolvedSlot;
             return resolvedSlot;
