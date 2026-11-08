@@ -4,7 +4,7 @@ using HarmonyLib;
 using UnityEngine;
 using UnityModManagerNet;
 
-namespace BetterJudgment
+namespace ADOFAIPlusPlus
 {
     public static class Main
     {
@@ -740,6 +740,15 @@ namespace BetterJudgment
             {
                 Settings.HidePlanetRing = newRing;
                 Patches.ApplyHidePlanetRing(newRing);
+            }
+
+            GUILayout.Space(6);
+
+            bool oldEditor = Settings.AlwaysAllowEditor;
+            bool newEditor = GUILayout.Toggle(oldEditor, " " + Loc.Get("misc.editor_toggle"));
+            if (newEditor != oldEditor)
+            {
+                Settings.AlwaysAllowEditor = newEditor;
             }
 
             GUILayout.Space(6);

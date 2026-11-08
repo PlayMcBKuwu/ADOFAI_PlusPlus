@@ -7,7 +7,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace BetterJudgment
+namespace ADOFAIPlusPlus
 {
     public class IndicatorData
     {
@@ -2472,5 +2472,256 @@ namespace BetterJudgment
                 }
             }
         }
+
+
+        private static readonly FieldInfo F_PauseButtons = AccessTools.Field(typeof(PauseMenu), "pauseButtons");
+        private static readonly FieldInfo F_OpenInEditorButton = AccessTools.Field(typeof(PauseMenu), "openInEditorButton");
+        private static readonly FieldInfo F_PauseMenuChain = AccessTools.Field(typeof(PauseMenu), "pauseMenuChain");
+        private static readonly FieldInfo F_ButtonsContainer = AccessTools.Field(typeof(PauseMenu), "buttonsContainer");
+        private static readonly FieldInfo F_CurrentButtons = AccessTools.Field(typeof(PauseMenu), "currentButtons");
+        private static readonly FieldInfo F_SelectedIndex = AccessTools.Field(typeof(PauseMenu), "selectedIndex");
+
+        public static void SaveClipToWav(AudioClip clip, string path)
+        {
+            if (clip == null || string.IsNullOrEmpty(path)) return;
+            float[] samples = new float[clip.samples * clip.channels];
+            MethodInfo mGetData = typeof(AudioClip).GetMethod("GetData", new Type[] { typeof(float[]), typeof(int) });
+            if (mGetData != null)
+            {
+                mGetData.Invoke(clip, new object[] { samples, 0 });
+            }
+
+            using (System.IO.FileStream fs = new System.IO.FileStream(path, System.IO.FileMode.Create))
+            using (System.IO.BinaryWriter bw = new System.IO.BinaryWriter(fs))
+            {
+                int channels = clip.channels;
+                int sampleRate = clip.frequency;
+                int subChunk2Size = samples.Length * 2;
+                int chunkSize = 36 + subChunk2Size;
+
+                byte[] riffTag = new byte[] { 0x52, 0x49, 0x46, 0x46 }; // "RIFF"
+                byte[] waveTag = new byte[] { 0x57, 0x41, 0x56, 0x45 }; // "WAVE"
+                byte[] fmtTag  = new byte[] { 0x66, 0x6D, 0x74, 0x20 }; // "fmt "
+                byte[] dataTag = new byte[] { 0x64, 0x61, 0x74, 0x61 }; // "data"
+
+                bw.Write(riffTag);
+                bw.Write(chunkSize);
+                bw.Write(waveTag);
+                bw.Write(fmtTag);
+                bw.Write(16);
+                bw.Write((short)1);
+                bw.Write((short)channels);
+                bw.Write(sampleRate);
+                bw.Write(sampleRate * channels * 2);
+                bw.Write((short)(channels * 2));
+                bw.Write((short)16);
+                bw.Write(dataTag);
+                bw.Write(subChunk2Size);
+
+                for (int i = 0; i < samples.Length; i++)
+                {
+                    float f = samples[i];
+                    if (f > 1f) f = 1f;
+                    else if (f < -1f) f = -1f;
+                    short s = (short)(f * 32767f);
+                    bw.Write(s);
+                }
+            }
+        }
+
+        public static void ExportOfficialLevelAndOpenInEditor(PauseMenu pm)
+        {
+            try
+            {
+                string levelName = GCS.internalLevelName;
+                if (string.IsNullOrEmpty(levelName))
+                {
+                    levelName = ADOBase.currentLevel;
+                }
+                if (string.IsNullOrEmpty(levelName))
+                {
+                    levelName = "OfficialLevel";
+                }
+
+                char[] invalidChars = System.IO.Path.GetInvalidFileNameChars();
+                string safeName = levelName;
+                for (int i = 0; i < invalidChars.Length; i++)
+                {
+                    safeName = safeName.Replace(invalidChars[i], '_');
+                }
+
+                string baseDir = System.IO.Path.Combine(System.IO.Directory.GetParent(Application.dataPath).FullName, "CustomLevels");
+                string exportDir = System.IO.Path.Combine(baseDir, "Official_" + safeName);
+                if (!System.IO.Directory.Exists(exportDir))
+                {
+                    System.IO.Directory.CreateDirectory(exportDir);
+                }
+
+                string adofaiPath = System.IO.Path.Combine(exportDir, "main.adofai");
+                string wavPath = System.IO.Path.Combine(exportDir, "song.wav");
+
+                AudioClip clip = null;
+                if (scrConductor.instance != null && scrConductor.instance.song != null)
+                {
+                    clip = scrConductor.instance.song.clip;
+                }
+                else if (ADOBase.conductor != null && ADOBase.conductor.song != null)
+                {
+                    clip = ADOBase.conductor.song.clip;
+                }
+
+                bool hasAudio = false;
+                if (clip != null)
+                {
+                    try
+                    {
+                        if (!System.IO.File.Exists(wavPath))
+                        {
+                            SaveClipToWav(clip, wavPath);
+                        }
+                        hasAudio = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning("[ADOFAI++] Failed to export audio clip to WAV: " + ex.Message);
+                    }
+                }
+
+                ADOFAI.LevelData ld = null;
+                if (scnGame.instance != null && scnGame.instance.levelData != null)
+                {
+                    ld = scnGame.instance.levelData;
+                }
+
+                if (ld != null)
+                {
+                    ADOFAI.LevelData exportLd = ld.Copy();
+                    if (hasAudio)
+                    {
+                        exportLd.songFilename = "song.wav";
+                    }
+
+                    if ((exportLd.angleData == null || exportLd.angleData.Count == 0) && !string.IsNullOrEmpty(exportLd.pathData))
+                    {
+                        float[] angles = ADOFAI.FloorHelper.MigratePathData(exportLd.pathData);
+                        exportLd.angleData = new List<float>(angles);
+                        exportLd.pathData = "";
+                        exportLd.isOldLevel = false;
+                    }
+                    else
+                    {
+                        exportLd.isOldLevel = false;
+                        exportLd.pathData = "";
+                    }
+
+                    string json = exportLd.Encode();
+                    System.IO.File.WriteAllText(adofaiPath, json, System.Text.Encoding.UTF8);
+                }
+                else
+                {
+                    Debug.LogError("[ADOFAI++] LevelData is null during official level export!");
+                    return;
+                }
+
+                if (pm != null)
+                {
+                    pm.Hide();
+                }
+                DOTween.KillAll();
+                if (scrConductor.instance != null && scrConductor.instance.song != null)
+                {
+                    scrConductor.instance.song.Stop();
+                }
+
+                GCS.internalLevelName = null;
+                GCS.customLevelPaths = new string[] { adofaiPath };
+                GCS.customLevelIndex = 0;
+                GCS.customLevelId = "Official_" + safeName;
+                if (scnGame.instance != null)
+                {
+                    scnGame.instance.levelPath = adofaiPath;
+                }
+                scnEditor.levelToOpenOnLoad = adofaiPath;
+
+                UnityEngine.SceneManagement.SceneManager.LoadScene("scnEditor");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("[ADOFAI++] Error exporting official level to editor: " + e);
+            }
+        }
+
+        /// <summary>
+        /// 始终允许关卡编辑器：在官方关卡暂停菜单中强制添加「在关卡编辑器中打开」按钮
+        /// </summary>
+        [HarmonyPatch(typeof(PauseMenu), "RefreshLayout")]
+        public static class Patch_PauseMenu_RefreshLayout
+        {
+            public static void Postfix(PauseMenu __instance)
+            {
+                if (!Main.Enabled || Main.Settings == null || !Main.Settings.MasterEnabled || !Main.Settings.AlwaysAllowEditor)
+                    return;
+                if (__instance == null || F_OpenInEditorButton == null || F_PauseButtons == null)
+                    return;
+
+                PauseButton openBtn = F_OpenInEditorButton.GetValue(__instance) as PauseButton;
+                if (openBtn == null) return;
+
+                PauseButton[] buttons = F_PauseButtons.GetValue(__instance) as PauseButton[];
+                if (buttons == null) return;
+
+                List<PauseButton> list = new List<PauseButton>(buttons);
+                if (!list.Contains(openBtn))
+                {
+                    int idx = Math.Max(0, list.Count - 1);
+                    list.Insert(idx, openBtn);
+                    F_PauseButtons.SetValue(__instance, list.ToArray());
+
+                    if (F_PauseMenuChain != null && F_ButtonsContainer != null)
+                    {
+                        PauseMenuChain chain = F_PauseMenuChain.GetValue(__instance) as PauseMenuChain;
+                        RectTransform container = F_ButtonsContainer.GetValue(__instance) as RectTransform;
+                        if (chain != null && container != null)
+                        {
+                            chain.UpdateHeight(container);
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 始终允许关卡编辑器：点击「在关卡编辑器中打开」时，若为官谱则导出为干净自定义谱面并唤起编辑器
+        /// </summary>
+        [HarmonyPatch(typeof(PauseMenu), "Choose")]
+        public static class Patch_PauseMenu_Choose
+        {
+            public static bool Prefix(PauseMenu __instance)
+            {
+                if (!Main.Enabled || Main.Settings == null || !Main.Settings.MasterEnabled || !Main.Settings.AlwaysAllowEditor)
+                    return true;
+                if (__instance == null || F_CurrentButtons == null || F_SelectedIndex == null)
+                    return true;
+
+                List<GeneralPauseButton> buttons = F_CurrentButtons.GetValue(__instance) as List<GeneralPauseButton>;
+                if (buttons == null)
+                    return true;
+                int selectedIndex = (int)F_SelectedIndex.GetValue(__instance);
+                if (selectedIndex < 0 || selectedIndex >= buttons.Count)
+                    return true;
+
+                PauseButton pb = buttons[selectedIndex] as PauseButton;
+                if (pb != null && pb.buttonType == PauseMenu.ButtonType.LevelEditor)
+                {
+                    if (ADOBase.isOfficialLevel || ADOBase.isInternalLevel)
+                    {
+                        ExportOfficialLevelAndOpenInEditor(__instance);
+                        return false;
+                    }
+                }
+                return true;
+            }
+        }
+
     }
 }

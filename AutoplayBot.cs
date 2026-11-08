@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using UnityEngine;
 
-namespace BetterJudgment
+namespace ADOFAIPlusPlus
 {
     /// <summary>
     /// 自动播放+ (Autoplay+) 核心引擎：

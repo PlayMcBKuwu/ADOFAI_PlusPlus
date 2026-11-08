@@ -1,9 +1,10 @@
 {
-  "EntryMethod": "BetterJudgment.Main.Load",
-  "Id": "BetterJudgment",
-  "DisplayName": "更好的判定 (Better Judgment)",
+  "EntryMethod": "ADOFAIPlusPlus.Main.Load",
+  "Id": "ADOFAIPlusPlus",
+  "DisplayName": "ADOFAI++",
   "Author": "ADOFAI Research",
-  "Version": "1.5.2",
+  "Version": "1.6.0",
   "GameVersion": "r150",
+  "AssemblyName": "ADOFAIPlusPlus.dll",
   "Requirements": []
 }

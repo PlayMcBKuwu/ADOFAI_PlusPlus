@@ -1,4 +1,4 @@
-# 一键编译脚本 (Build Script - BetterJudgment)
+# 一键编译脚本 (Build Script - ADOFAI++)
 $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 $modDir = $PSScriptRoot
 $managed = "C:\Program Files (x86)\Steam\steamapps\common\A Dance of Fire and Ice\A Dance of Fire and Ice_Data\Managed"
@@ -8,7 +8,7 @@ $binDir = "$modDir\bin"
 
 if (!(Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir | Out-Null }
 
-$outputDll = "$binDir\BetterJudgment.dll"
+$outputDll = "$binDir\ADOFAIPlusPlus.dll"
 
 $sources = (Get-ChildItem -Path $modDir -Filter "*.cs").FullName
 
@@ -30,7 +30,7 @@ $args = @(
     "/nologo"
 ) + $refArgs + ($sources | ForEach-Object { "`"$_`"" })
 
-Write-Host "Compiling BetterJudgment.dll..." -ForegroundColor Cyan
+Write-Host "Compiling ADOFAIPlusPlus.dll..." -ForegroundColor Cyan
 & $csc $args
 
 if ($LASTEXITCODE -eq 0) {
@@ -38,18 +38,22 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "Build Successful! Output: $outputDll" -ForegroundColor Green
 
     $modsRoot = "C:\Program Files (x86)\Steam\steamapps\common\A Dance of Fire and Ice\Mods"
-    $gameModsDir = "$modsRoot\BetterJudgment"
+    $gameModsDir = "$modsRoot\ADOFAIPlusPlus"
+    $oldModsDir = "$modsRoot\BetterJudgment"
     $legacyModsDir = "$modsRoot\MobileJudgmentMod"
 
     if (Test-Path $modsRoot) {
         if (!(Test-Path $gameModsDir)) { New-Item -ItemType Directory -Path $gameModsDir | Out-Null }
-        if ((Test-Path "$legacyModsDir\Settings.xml") -and !(Test-Path "$gameModsDir\Settings.xml")) {
-            Copy-Item -Path "$legacyModsDir\Settings.xml" -Destination "$gameModsDir\Settings.xml" -Force
+        if ((Test-Path "$oldModsDir\Settings.xml") -and !(Test-Path "$gameModsDir\Settings.xml")) {
+            Copy-Item -Path "$oldModsDir\Settings.xml" -Destination "$gameModsDir\Settings.xml" -Force
+        }
+        if (Test-Path $oldModsDir) {
+            Remove-Item -Path $oldModsDir -Recurse -Force -ErrorAction SilentlyContinue
         }
         if (Test-Path $legacyModsDir) {
             Remove-Item -Path $legacyModsDir -Recurse -Force -ErrorAction SilentlyContinue
         }
-        Copy-Item -Path "$outputDll" -Destination "$gameModsDir\BetterJudgment.dll" -Force
+        Copy-Item -Path "$outputDll" -Destination "$gameModsDir\ADOFAIPlusPlus.dll" -Force
         Copy-Item -Path "$modDir\Info.json" -Destination "$gameModsDir\Info.json" -Force
         Write-Host "Automatically deployed to: $gameModsDir" -ForegroundColor Green
     }

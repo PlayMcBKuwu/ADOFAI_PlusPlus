@@ -2,7 +2,7 @@ using System;
 using UnityEngine;
 using UnityModManagerNet;
 
-namespace BetterJudgment
+namespace ADOFAIPlusPlus
 {
     public enum JudgmentMode
     {
@@ -190,6 +190,11 @@ namespace BetterJudgment
         /// 杂项：隐藏星球判定圈（虚线圆圈）
         /// </summary>
         public bool HidePlanetRing = false;
+
+        /// <summary>
+        /// 杂项：始终允许关卡编辑器（官谱亦可在关卡编辑器中打开）
+        /// </summary>
+        public bool AlwaysAllowEditor = false;
 
         /// <summary>
         /// 杂项：自动播放+（独立开关，内部零延迟判定 + 双通道拟人按键驱动 KV）
