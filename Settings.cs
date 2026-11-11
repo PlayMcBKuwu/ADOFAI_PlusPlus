@@ -85,6 +85,11 @@ namespace ADOFAIPlusPlus
         public bool MigratedJapaneseFontDefault = false;
 
         /// <summary>
+        /// 经典模式（简体中文专属：将游戏字体替换为站酷快乐体，编辑器除外）
+        /// </summary>
+        public bool ClassicMode = false;
+
+        /// <summary>
         /// 当前判定模式
         /// </summary>
         public JudgmentMode Mode = JudgmentMode.Disabled;

@@ -244,6 +244,8 @@ namespace ADOFAIPlusPlus
             Add(l, "ui.lang.auto", "跟随游戏 (Auto)");
             Add(l, "ui.japanese_better_loc", "启用「更好的日语本地化」：将原版日语下未翻译的英文判定词完整本地化为日语");
             Add(l, "ui.japanese_use_chinese_font", "日语界面使用中文字体（替换游戏原版日语字体，默认开启）");
+            Add(l, "ui.classic_mode", "经典模式");
+            Add(l, "ui.classic_mode_desc", "回到最初的美好。");
             Add(l, "ui.border_color.toggle", "判定文字外边框染对应色（灰/绿；关闭则使用之前版本的原版白金高亮边框）");
             Add(l, "ui.track_color.toggle", "启用「轨道染色」：打出「标判！」与「宽判！」时，对应将脚下轨道砖块染为灰色与绿色");
 
@@ -364,6 +366,8 @@ namespace ADOFAIPlusPlus
             Add(l, "ui.lang.auto", "跟隨遊戲 (Auto)");
             Add(l, "ui.japanese_better_loc", "啟用「更好的日語本地化」：將原版日語下未翻譯的英文判定詞完整本地化為日語");
             Add(l, "ui.japanese_use_chinese_font", "日語介面使用中文字體（替換遊戲原版日語字體，預設開啟）");
+            Add(l, "ui.classic_mode", "經典模式");
+            Add(l, "ui.classic_mode_desc", "回到最初的美好。");
             Add(l, "ui.border_color.toggle", "判定文字外邊框染對應色（灰/綠；關閉則使用之前版本的原版白金高亮邊框）");
             Add(l, "ui.track_color.toggle", "啟用「軌道染色」：打出「標判！」與「寬判！」時，對應將腳下軌道磚塊染為灰色與綠色");
 
@@ -484,6 +488,8 @@ namespace ADOFAIPlusPlus
             Add(l, "ui.lang.auto", "Follow Game (Auto)");
             Add(l, "ui.japanese_better_loc", "Enable \"Better Japanese Localization\": Localize all untranslated English judgment texts into Japanese");
             Add(l, "ui.japanese_use_chinese_font", "Use Chinese Font in Japanese (Replaces default Japanese font; enabled by default)");
+            Add(l, "ui.classic_mode", "Classic Mode");
+            Add(l, "ui.classic_mode_desc", "Back to the original beauty.");
             Add(l, "ui.border_color.toggle", "Color Floating Hit Text Border (Gray/Green; disable to use previous vanilla highlight border)");
             Add(l, "ui.track_color.toggle", "Enable \"Track Coloring\": Color the stepped track tile gray on \"Normal!\" and green on \"Lenient!\"");
 
@@ -596,6 +602,8 @@ namespace ADOFAIPlusPlus
             Add(l, "ui.lang.auto", "게임 설정 따름 (Auto)");
             Add(l, "ui.japanese_better_loc", "「더 나은 일본어 현지화」 활성화: 원작 일본어에서 영어로 표시되는 모든 판정 텍스트를 일본어로 번역");
             Add(l, "ui.japanese_use_chinese_font", "일본어 인터페이스에서 중국어 폰트 사용 (기본 일본어 폰트 대체, 기본 켜짐)");
+            Add(l, "ui.classic_mode", "클래식 모드");
+            Add(l, "ui.classic_mode_desc", "처음의 아름다움으로 돌아가기.");
             Add(l, "ui.border_color.toggle", "판정 텍스트 테두리 색상 적용 (회색/초록색; 끄면 이전 버전의 기본 하이라이트 테두리 사용)");
             Add(l, "ui.track_color.toggle", "「트랙 염색」 활성화: 「보통！」 및 「완화！」 타격 시 트랙 타일을 각각 회색과 초록색으로 염색");
 
@@ -708,6 +716,8 @@ namespace ADOFAIPlusPlus
             Add(l, "ui.lang.auto", "ゲームに合わせる (Auto)");
             Add(l, "ui.japanese_better_loc", "「より良い日本語ローカライズ」を有効化: バニラでは英語のままの判定表示やReady/Goを自然な日本語に翻訳");
             Add(l, "ui.japanese_use_chinese_font", "日本語表示時に中国語フォントを使用（バニラの日本語フォントを置換、デフォルト有効）");
+            Add(l, "ui.classic_mode", "クラシックモード");
+            Add(l, "ui.classic_mode_desc", "原初の美しさへ。");
             Add(l, "ui.border_color.toggle", "判定文字の枠線を色分け（グレー/緑；オフで旧バージョンのハイライト枠線を使用）");
             Add(l, "ui.track_color.toggle", "「トラック着色」を有効化: 通常合格時にタイルをグレー、優しい合格時に緑色に着色");
 

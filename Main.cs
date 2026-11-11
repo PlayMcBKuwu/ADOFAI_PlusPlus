@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityModManagerNet;
 
 namespace ADOFAIPlusPlus
@@ -45,6 +46,7 @@ namespace ADOFAIPlusPlus
             modEntry.OnSaveGUI = OnSaveGUI;
 
             _harmony = new Harmony(modEntry.Info.Id);
+            SceneManager.sceneLoaded += Patches.OnSceneLoaded;
 
             return true;
         }
@@ -59,6 +61,7 @@ namespace ADOFAIPlusPlus
                 try
                 {
                     Patches.ApplyJapaneseFontPreference();
+                    Patches.ApplyClassicFontPreference();
                     Patches.ApplyModeChange();
                     if (Settings.NoFail) Patches.ApplyNoFail(true);
                     if (Settings.Autoplay) Patches.ApplyAutoplay(true);
@@ -77,6 +80,7 @@ namespace ADOFAIPlusPlus
             {
                 try
                 {
+                    Patches.ApplyClassicFontPreference();
                     Patches.RestoreOriginalState();
                     Patches.ApplyNoFail(false);
                     Patches.ApplyAutoplay(false);
@@ -210,6 +214,7 @@ namespace ADOFAIPlusPlus
             {
                 Settings.Language = (ModLanguage)newLangIdx;
                 Patches.ApplyJapaneseFontPreference();
+                Patches.ApplyClassicFontPreference();
                 Patches.UpdateHUDText();
             }
 
@@ -235,6 +240,21 @@ namespace ADOFAIPlusPlus
                     Settings.JapaneseUseChineseFont = newJpFont;
                     Patches.ApplyJapaneseFontPreference();
                 }
+            }
+
+            if (Loc.CurrentLanguage == SystemLanguage.ChineseSimplified || RDString.language == SystemLanguage.ChineseSimplified)
+            {
+                GUILayout.Space(4);
+                bool oldClassic = Settings.ClassicMode;
+                bool newClassic = GUILayout.Toggle(
+                    oldClassic,
+                    " " + Loc.Get("ui.classic_mode"));
+                if (newClassic != oldClassic)
+                {
+                    Settings.ClassicMode = newClassic;
+                    Patches.ApplyClassicFontPreference();
+                }
+                GUILayout.Label("    <color=#888888>" + Loc.Get("ui.classic_mode_desc") + "</color>");
             }
             GUILayout.EndVertical();
             GUILayout.Space(5);
