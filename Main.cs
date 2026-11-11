@@ -61,7 +61,6 @@ namespace ADOFAIPlusPlus
                 try
                 {
                     Patches.ApplyJapaneseFontPreference();
-                    Patches.ApplyClassicFontPreference();
                     Patches.ApplyModeChange();
                     if (Settings.NoFail) Patches.ApplyNoFail(true);
                     if (Settings.Autoplay) Patches.ApplyAutoplay(true);
@@ -80,7 +79,6 @@ namespace ADOFAIPlusPlus
             {
                 try
                 {
-                    Patches.ApplyClassicFontPreference();
                     Patches.RestoreOriginalState();
                     Patches.ApplyNoFail(false);
                     Patches.ApplyAutoplay(false);
