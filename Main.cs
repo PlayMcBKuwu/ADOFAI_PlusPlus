@@ -61,6 +61,7 @@ namespace ADOFAIPlusPlus
                 try
                 {
                     Patches.ApplyJapaneseFontPreference();
+                    Patches.ApplyClassicFontPreference();
                     Patches.ApplyModeChange();
                     if (Settings.NoFail) Patches.ApplyNoFail(true);
                     if (Settings.Autoplay) Patches.ApplyAutoplay(true);
@@ -151,7 +152,7 @@ namespace ADOFAIPlusPlus
                 if (GUILayout.Button("<b><size=13>" + Loc.Get("master.agree_btn") + "</size></b>", GUILayout.Height(38)))
                 {
                     Settings.MasterEnabled = true;
-                    Settings.DisclaimerAccepted = true;
+                    Settings.DisclaimerAccepted = true; Patches.ApplyJapaneseFontPreference(); Patches.ApplyClassicFontPreference();
                     Patches.ApplyModeChange();
                     if (Settings.NoFail) Patches.ApplyNoFail(true);
                     if (Settings.Autoplay) Patches.ApplyAutoplay(true);
@@ -237,6 +238,7 @@ namespace ADOFAIPlusPlus
                 {
                     Settings.JapaneseUseChineseFont = newJpFont;
                     Patches.ApplyJapaneseFontPreference();
+                    Patches.ApplyClassicFontPreference();
                 }
             }
 
